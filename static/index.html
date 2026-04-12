@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <title>Food Log</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+
+        .card {
+            background: white;
+            border-radius: 20px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .input-section {
+            margin-bottom: 30px;
+        }
+
+        textarea {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            font-size: 16px;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 100px;
+            transition: border-color 0.3s;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 15px;
+        }
+
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .button:active {
+            transform: translateY(0);
+        }
+
+        .button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .section-title {
+            font-size: 1.3rem;
+            margin-bottom: 15px;
+            color: #333;
+            font-weight: 600;
+        }
+
+        .food-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .food-item:last-child {
+            border-bottom: none;
+        }
+
+        .food-name {
+            font-weight: 500;
+            flex: 1;
+        }
+
+        .food-item-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .delete-btn {
+            background: #ff4444;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: background 0.2s;
+            white-space: nowrap;
+        }
+
+        .delete-btn:hover {
+            background: #cc0000;
+        }
+
+        .delete-btn:active {
+            transform: scale(0.95);
+        }
+
+        .meal-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            background: #f0f0f0;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            margin-left: 10px;
+            color: #666;
+        }
+
+        .meal-badge.breakfast {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .meal-badge.lunch {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .meal-badge.dinner {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .meal-badge.snack {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .calories {
+            font-weight: 600;
+            color: #667eea;
+            margin-left: 10px;
+        }
+
+        .total-section {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            color: white;
+            margin-top: 20px;
+        }
+
+        .total-label {
+            font-size: 1.1rem;
+        }
+
+        .total-value {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+
+        .empty-state svg {
+            width: 60px;
+            height: 60px;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+
+        .status-message {
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-size: 0.9rem;
+            display: none;
+        }
+
+        .status-message.success {
+            background: #d4edda;
+            color: #155724;
+            display: block;
+        }
+
+        .status-message.error {
+            background: #f8d7da;
+            color: #721c24;
+            display: block;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .tab.active {
+            background: white;
+            color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .summary-day {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .summary-date {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .summary-stats {
+            text-align: right;
+        }
+
+        .summary-calories {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .summary-count {
+            font-size: 0.85rem;
+            color: #666;
+        }
+
+        @media (max-width: 480px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .card {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🍽️ Food Log</h1>
+            <p>Track your meals naturally</p>
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('log')">Log Food</button>
+            <button class="tab" onclick="switchTab('today')">Today</button>
+            <button class="tab" onclick="switchTab('summary')">Summary</button>
+        </div>
+
+        <!-- Log Food Tab -->
+        <div id="log-tab" class="tab-content active">
+            <div class="card">
+                <h2 class="section-title">What did you eat?</h2>
+                <div class="input-section">
+                    <textarea 
+                        id="food-input" 
+                        placeholder="e.g., had oatmeal with banana for breakfast and a chicken sandwich for lunch"
+                    ></textarea>
+                    <button class="button" onclick="logFood()">Log Food</button>
+                    <div id="log-status" class="status-message"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Today Tab -->
+        <div id="today-tab" class="tab-content">
+            <div class="card">
+                <h2 class="section-title">Today's Entries</h2>
+                <div id="today-entries">
+                    <div class="empty-state">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                        </svg>
+                        <p>No entries yet today</p>
+                    </div>
+                </div>
+                <div id="today-total" style="display: none;">
+                    <div class="total-section">
+                        <span class="total-label">Total Calories</span>
+                        <span class="total-value" id="total-calories">0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Summary Tab -->
+        <div id="summary-tab" class="tab-content">
+            <div class="card">
+                <h2 class="section-title">7-Day Summary</h2>
+                <div id="summary-content">
+                    <div class="empty-state">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                        </svg>
+                        <p>No data available</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Get the API base URL (works for both localhost and network access)
+        const API_BASE = window.location.origin;
+
+        // Switch between tabs
+        function switchTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            event.target.classList.add('active');
+
+            // Update tab content
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(`${tabName}-tab`).classList.add('active');
+
+            // Load data for the tab
+            if (tabName === 'today') {
+                loadTodayEntries();
+            } else if (tabName === 'summary') {
+                loadSummary();
+            }
+        }
+
+        // Log food entry
+        async function logFood() {
+            const input = document.getElementById('food-input');
+            const status = document.getElementById('log-status');
+            const button = event.target;
+            const text = input.value.trim();
+
+            if (!text) {
+                showStatus('Please enter what you ate', 'error');
+                return;
+            }
+
+            button.disabled = true;
+            button.textContent = 'Logging...';
+
+            try {
+                const response = await fetch(`${API_BASE}/log`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'text/plain',
+                    },
+                    body: text
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to log food');
+                }
+
+                const data = await response.json();
+                
+                showStatus(`✓ Logged ${data.foods_logged} item(s) successfully!`, 'success');
+                input.value = '';
+
+                // Auto-switch to today tab after successful log
+                setTimeout(() => {
+                    document.querySelectorAll('.tab')[1].click();
+                }, 1000);
+
+            } catch (error) {
+                showStatus(`Error: ${error.message}`, 'error');
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Log Food';
+            }
+        }
+
+        // Load today's entries
+        async function loadTodayEntries() {
+            const container = document.getElementById('today-entries');
+            const totalSection = document.getElementById('today-total');
+            
+            container.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/log/today`);
+                const data = await response.json();
+
+                if (data.entries.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                            </svg>
+                            <p>No entries yet today</p>
+                        </div>
+                    `;
+                    totalSection.style.display = 'none';
+                    return;
+                }
+
+                let html = '';
+                data.entries.forEach(entry => {
+                    const mealClass = entry.meal ? entry.meal.toLowerCase() : '';
+                    const mealBadge = entry.meal ? `<span class="meal-badge ${mealClass}">${entry.meal}</span>` : '';
+                    const calories = entry.calories ? `<span class="calories">${entry.calories} cal</span>` : '';
+                    
+                    html += `
+                        <div class="food-item">
+                            <div class="food-name">
+                                ${entry.food_name}
+                                ${mealBadge}
+                            </div>
+                            <div class="food-item-info">
+                                ${calories}
+                                <button class="delete-btn" onclick="deleteEntry(${entry.id})">Delete</button>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                container.innerHTML = html;
+                
+                // Show total if we have calorie data
+                if (data.total_calories > 0) {
+                    document.getElementById('total-calories').textContent = data.total_calories;
+                    totalSection.style.display = 'block';
+                } else {
+                    totalSection.style.display = 'none';
+                }
+
+            } catch (error) {
+                container.innerHTML = `<div class="empty-state"><p>Error loading entries</p></div>`;
+            }
+        }
+
+        // Load 7-day summary
+        async function loadSummary() {
+            const container = document.getElementById('summary-content');
+            
+            container.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/log/summary`);
+                const data = await response.json();
+
+                if (!data.summary || data.summary.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                            </svg>
+                            <p>No data available</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                let html = '';
+                data.summary.forEach(day => {
+                    const calories = day.total_calories || '—';
+                    const caloriesText = calories !== '—' ? `${calories} cal` : 'No data';
+                    
+                    html += `
+                        <div class="summary-day">
+                            <div class="summary-date">${formatDate(day.date)}</div>
+                            <div class="summary-stats">
+                                <div class="summary-calories">${caloriesText}</div>
+                                <div class="summary-count">${day.entry_count} entries</div>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                container.innerHTML = html;
+
+            } catch (error) {
+                container.innerHTML = `<div class="empty-state"><p>Error loading summary</p></div>`;
+            }
+        }
+
+        // Delete an entry
+        async function deleteEntry(entryId) {
+            if (!confirm('Delete this entry?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/log/${entryId}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to delete entry');
+                }
+
+                // Reload today's entries
+                loadTodayEntries();
+
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        // Helper: Show status message
+        function showStatus(message, type) {
+            const status = document.getElementById('log-status');
+            status.textContent = message;
+            status.className = `status-message ${type}`;
+            
+            if (type === 'success') {
+                setTimeout(() => {
+                    status.className = 'status-message';
+                }, 3000);
+            }
+        }
+
+        // Helper: Format date nicely
+        function formatDate(dateStr) {
+            const date = new Date(dateStr);
+            const today = new Date();
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+
+            if (date.toDateString() === today.toDateString()) {
+                return 'Today';
+            } else if (date.toDateString() === yesterday.toDateString()) {
+                return 'Yesterday';
+            } else {
+                return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            }
+        }
+
+        // Allow Enter key to submit (with Shift+Enter for new line)
+        document.getElementById('food-input').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                logFood();
+            }
+        });
+    </script>
+</body>
+</html>
