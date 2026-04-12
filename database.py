@@ -4,7 +4,7 @@ Handles SQLite connection and all database operations.
 """
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional, List, Dict, Any
 import json
 
@@ -82,6 +82,22 @@ def _ensure_pending_entry_columns(cursor: sqlite3.Cursor) -> None:
             cursor.execute(
                 f"ALTER TABLE pending_entries ADD COLUMN {column_name} {column_type}"
             )
+
+
+def _ensure_indexes(cursor: sqlite3.Cursor) -> None:
+    """Create indexes for hot query paths."""
+    cursor.execute(
+        """CREATE INDEX IF NOT EXISTS idx_resolved_entries_logged_date_id
+           ON resolved_entries(logged_date, id DESC)"""
+    )
+    cursor.execute(
+        """CREATE INDEX IF NOT EXISTS idx_pending_entries_parsed_id_id
+           ON pending_entries(parsed_id, id DESC)"""
+    )
+    cursor.execute(
+        """CREATE INDEX IF NOT EXISTS idx_candidates_parsed_intent_score
+           ON candidates(parsed_id, intent_index, score DESC)"""
+    )
 
 
 def init_db() -> None:
@@ -184,6 +200,7 @@ def init_db() -> None:
     # Ensure existing databases are upgraded with any missing nutrient columns.
     _ensure_resolved_entry_columns(cursor)
     _ensure_pending_entry_columns(cursor)
+    _ensure_indexes(cursor)
     _backfill_resolved_entry_created_at(cursor)
     
     conn.commit()
@@ -198,7 +215,7 @@ def insert_raw_entry(input_text: str) -> int:
     conn = get_connection()
     cursor = conn.cursor()
     
-    timestamp = datetime.utcnow().isoformat()
+    timestamp = datetime.now(UTC).isoformat()
     cursor.execute(
         "INSERT INTO raw_entries (timestamp, input_text) VALUES (?, ?)",
         (timestamp, input_text)
@@ -218,7 +235,7 @@ def insert_parsed_entry(raw_id: int, parsed_json: Dict[str, Any], confidence: st
     conn = get_connection()
     cursor = conn.cursor()
     
-    created_at = datetime.utcnow().isoformat()
+    created_at = datetime.now(UTC).isoformat()
     cursor.execute(
         "INSERT INTO parsed_entries (raw_id, parsed_json, confidence, created_at) VALUES (?, ?, ?, ?)",
         (raw_id, json.dumps(parsed_json), confidence, created_at)
@@ -261,7 +278,7 @@ def insert_resolved_entry(
     """
     conn = get_connection()
     cursor = conn.cursor()
-    created_at = datetime.utcnow().isoformat()
+    created_at = datetime.now(UTC).isoformat()
     
     cursor.execute(
         """INSERT INTO resolved_entries 
@@ -329,7 +346,7 @@ def insert_pending_entry(
     conn = get_connection()
     cursor = conn.cursor()
     
-    created_at = datetime.utcnow().isoformat()
+    created_at = datetime.now(UTC).isoformat()
     cursor.execute(
         """INSERT INTO pending_entries 
            (parsed_id, intent_index, input_text, food_name, brand, modifiers, quantity, meal, logged_date,

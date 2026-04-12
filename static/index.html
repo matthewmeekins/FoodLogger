@@ -649,9 +649,9 @@
         </div>
 
         <div class="tabs">
-            <button class="tab active" onclick="switchTab('log')">Log Food</button>
-            <button class="tab" onclick="switchTab('today')">Today</button>
-            <button class="tab" onclick="switchTab('summary')">Summary</button>
+            <button class="tab active" onclick="switchTab('log', this)">Log Food</button>
+            <button class="tab" onclick="switchTab('today', this)">Today</button>
+            <button class="tab" onclick="switchTab('summary', this)">Summary</button>
         </div>
 
         <!-- Log Food Tab -->
@@ -738,10 +738,13 @@
         let selectedSummaryDate = null;
 
         // Switch between tabs
-        function switchTab(tabName) {
+        function switchTab(tabName, tabButton = null) {
             // Update tab buttons
             document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
-            event.target.classList.add('active');
+            const activeButton = tabButton || document.querySelector(`.tab[onclick*="'${tabName}'"]`);
+            if (activeButton) {
+                activeButton.classList.add('active');
+            }
 
             // Update tab content
             document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
@@ -1034,66 +1037,6 @@
             } else {
                 panel.classList.add('visible');
                 toggle.textContent = 'Trace ▲';
-            }
-        }
-
-        // Load 7-day summary
-        async function loadSummary() {
-            const container = document.getElementById('summary-content');
-            const startInput = document.getElementById('summary-start');
-            const endInput = document.getElementById('summary-end');
-            
-            container.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
-
-            try {
-                let query = '';
-                if (startInput.value && endInput.value) {
-                    query = `?start_date=${encodeURIComponent(startInput.value)}&end_date=${encodeURIComponent(endInput.value)}`;
-                }
-
-                const response = await fetch(`${API_BASE}/log/summary${query}`);
-                const data = await response.json();
-
-                if (!data.summary || data.summary.length === 0) {
-                    container.innerHTML = `
-                        <div class="empty-state">
-                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                            </svg>
-                            <p>No data available</p>
-                        </div>
-                    `;
-                    return;
-                }
-
-                let html = '';
-                data.summary.forEach(day => {
-                    const calories = day.total_calories || '—';
-                    const caloriesText = calories !== '—' ? `${calories} cal` : 'No data';
-                    
-                    html += `
-                        <div class="summary-day" onclick="loadDateDetails('${day.date}')">
-                            <div class="summary-date">${formatDate(day.date)}</div>
-                            <div class="summary-stats">
-                                <div class="summary-calories">${caloriesText}</div>
-                                <div class="summary-count">${day.entry_count} entries</div>
-                            </div>
-                        </div>
-                    `;
-                });
-
-                container.innerHTML = html;
-                
-                // Show total if we have calorie data
-                if (data.total_calories > 0) {
-                    document.getElementById('total-calories').textContent = data.total_calories;
-                    totalSection.style.display = 'block';
-                } else {
-                    totalSection.style.display = 'none';
-                }
-
-            } catch (error) {
-                container.innerHTML = `<div class="empty-state"><p>Error loading entries</p></div>`;
             }
         }
 
