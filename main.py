@@ -742,15 +742,38 @@ async def manual_estimate(request: Request) -> Dict[str, Any]:
 
 
 @app.get("/log/summary")
-def get_summary() -> Dict[str, Any]:
+def get_summary(start_date: str | None = None, end_date: str | None = None, days: int = 7) -> Dict[str, Any]:
     """
-    Get total calories by date for the last 7 days.
+    Get total calories by date.
+    - If start_date and end_date are provided, use inclusive range.
+    - Otherwise fallback to last N days.
     """
-    summary = database.get_summary_last_n_days(7)
-    
+    if start_date and end_date:
+        summary = database.get_summary_by_date_range(start_date, end_date)
+        return {
+            "start_date": start_date,
+            "end_date": end_date,
+            "summary": summary,
+        }
+
+    summary = database.get_summary_last_n_days(days)
     return {
-        "days": 7,
-        "summary": summary
+        "days": days,
+        "summary": summary,
+    }
+
+
+@app.get("/log/date/{target_date}")
+def get_entries_for_specific_date(target_date: str) -> Dict[str, Any]:
+    """Get all resolved entries for a specific date (YYYY-MM-DD)."""
+    entries = database.get_entries_for_date(target_date)
+    total_calories = sum(entry.get("calories") or 0 for entry in entries)
+
+    return {
+        "date": target_date,
+        "entries": entries,
+        "total_calories": total_calories,
+        "entry_count": len(entries),
     }
 
 

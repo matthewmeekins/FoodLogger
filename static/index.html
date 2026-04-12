@@ -7,6 +7,8 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <title>Food Log</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
         * {
             margin: 0;
             padding: 0;
@@ -14,80 +16,96 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
+            background:
+                radial-gradient(1200px 600px at 10% -10%, #20233f 0%, rgba(32, 35, 63, 0) 60%),
+                radial-gradient(1000px 600px at 100% 0%, #17203a 0%, rgba(23, 32, 58, 0) 55%),
+                #0f1117;
             min-height: 100vh;
-            padding: 20px;
-            color: #333;
+            padding: 24px;
+            color: #e6e8ee;
         }
 
         .container {
-            max-width: 600px;
+            max-width: 760px;
             margin: 0 auto;
         }
 
         .header {
-            text-align: center;
-            color: white;
-            margin-bottom: 30px;
+            margin-bottom: 22px;
         }
 
         .header h1 {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
+            font-size: 2rem;
+            line-height: 1.1;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            color: #f7f8fc;
+            margin-bottom: 6px;
         }
 
         .header p {
-            opacity: 0.9;
-            font-size: 1.1rem;
+            color: #97a0b5;
+            font-size: 0.98rem;
         }
 
         .card {
-            background: white;
-            border-radius: 20px;
-            padding: 25px;
+            background: #171a22;
+            border: 1px solid #2a3040;
+            border-radius: 14px;
+            padding: 22px;
             margin-bottom: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            box-shadow: 0 20px 35px rgba(3, 6, 12, 0.35);
         }
 
         .input-section {
-            margin-bottom: 30px;
+            margin-bottom: 20px;
         }
 
         textarea {
             width: 100%;
-            padding: 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 12px;
-            font-size: 16px;
+            padding: 14px 14px;
+            border: 1px solid #30374a;
+            background: #10131a;
+            color: #e8ebf3;
+            border-radius: 10px;
+            font-size: 15px;
             font-family: inherit;
             resize: vertical;
-            min-height: 100px;
-            transition: border-color 0.3s;
+            min-height: 120px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        textarea::placeholder,
+        .clarification-section input::placeholder {
+            color: #6d7589;
         }
 
         textarea:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #5c8dff;
+            box-shadow: 0 0 0 3px rgba(92, 141, 255, 0.15);
         }
 
         .button {
             width: 100%;
-            padding: 15px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            padding: 12px 14px;
+            background: linear-gradient(180deg, #5d90ff 0%, #3f77f3 100%);
+            color: #ffffff;
             border: none;
-            border-radius: 12px;
-            font-size: 16px;
+            border-radius: 10px;
+            font-size: 14px;
             font-weight: 600;
+            letter-spacing: 0.01em;
             cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-            margin-top: 15px;
+            transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
+            margin-top: 12px;
         }
 
         .button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+            transform: translateY(-1px);
+            box-shadow: 0 8px 18px rgba(63, 119, 243, 0.35);
+            filter: brightness(1.03);
         }
 
         .button:active {
@@ -95,24 +113,25 @@
         }
 
         .button:disabled {
-            opacity: 0.6;
+            opacity: 0.5;
             cursor: not-allowed;
             transform: none;
         }
 
         .section-title {
-            font-size: 1.3rem;
-            margin-bottom: 15px;
-            color: #333;
+            font-size: 1.05rem;
+            margin-bottom: 14px;
+            color: #f4f6fb;
             font-weight: 600;
+            letter-spacing: -0.01em;
         }
 
         .food-item {
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            padding: 12px 0;
-            border-bottom: 1px solid #f0f0f0;
+            align-items: flex-start;
+            padding: 14px 0;
+            border-bottom: 1px solid #232838;
         }
 
         .food-item:last-child {
@@ -120,30 +139,35 @@
         }
 
         .food-name {
-            font-weight: 500;
+            color: #f2f4fa;
+            font-weight: 600;
             flex: 1;
         }
 
         .food-item-info {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
+            margin-left: 10px;
         }
 
         .delete-btn {
-            background: #ff4444;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            padding: 6px 12px;
-            font-size: 0.85rem;
+            background: transparent;
+            color: #aeb6ca;
+            border: 1px solid #333a4d;
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 0.78rem;
+            font-weight: 600;
             cursor: pointer;
-            transition: background 0.2s;
+            transition: border-color 0.2s, color 0.2s, background 0.2s;
             white-space: nowrap;
         }
 
         .delete-btn:hover {
-            background: #cc0000;
+            border-color: #eb5b69;
+            color: #ffd2d7;
+            background: rgba(235, 91, 105, 0.08);
         }
 
         .food-details {
@@ -151,61 +175,77 @@
         }
 
         .food-meta {
-            font-size: 0.85rem;
-            color: #666;
-            margin-top: 4px;
+            font-size: 0.82rem;
+            color: #99a2b7;
+            margin-top: 6px;
+            line-height: 1.45;
         }
 
         .confidence {
             display: inline-block;
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 0.68rem;
             font-weight: 600;
             text-transform: uppercase;
-            margin-left: 8px;
+            margin-left: 7px;
+            letter-spacing: 0.04em;
+            border: 1px solid transparent;
         }
 
         .confidence.high {
-            background: #d4edda;
-            color: #155724;
+            background: rgba(47, 196, 141, 0.16);
+            border-color: rgba(47, 196, 141, 0.35);
+            color: #8ce5bf;
         }
 
         .confidence.medium {
-            background: #fff3cd;
-            color: #856404;
+            background: rgba(255, 181, 72, 0.16);
+            border-color: rgba(255, 181, 72, 0.35);
+            color: #ffd49a;
         }
 
         .confidence.low {
-            background: #f8d7da;
-            color: #721c24;
+            background: rgba(239, 91, 113, 0.16);
+            border-color: rgba(239, 91, 113, 0.35);
+            color: #ffb5c0;
+        }
+
+        .confidence.manual {
+            background: rgba(152, 167, 198, 0.16);
+            border-color: rgba(152, 167, 198, 0.35);
+            color: #cfd7eb;
         }
 
         .source {
-            font-size: 0.75rem;
-            color: #999;
+            font-size: 0.72rem;
+            color: #7f89a0;
             margin-left: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
         }
 
         .macros {
-            margin-top: 2px;
+            margin-top: 4px;
             font-size: 0.8rem;
         }
 
         .assumptions-toggle {
-            margin-top: 4px;
-            color: #667eea;
+            margin-top: 6px;
+            color: #82a7ff;
             cursor: pointer;
-            font-size: 0.8rem;
+            font-size: 0.76rem;
             font-weight: 500;
         }
 
         .assumptions-panel {
             margin-top: 8px;
-            padding: 8px;
-            background: #f8f9fa;
+            padding: 10px;
+            background: #10131a;
+            border: 1px solid #2b3142;
             border-radius: 6px;
             font-size: 0.8rem;
+            color: #a8b1c8;
         }
 
         .assumptions-panel ul {
@@ -219,37 +259,41 @@
 
         .meal-badge {
             display: inline-block;
-            padding: 4px 10px;
-            background: #f0f0f0;
-            border-radius: 12px;
-            font-size: 0.85rem;
+            padding: 3px 8px;
+            background: #212636;
+            border: 1px solid #31394d;
+            border-radius: 999px;
+            font-size: 0.73rem;
+            font-weight: 600;
             margin-left: 10px;
-            color: #666;
+            color: #adb6ca;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
         }
 
         .meal-badge.breakfast {
-            background: #fff3cd;
-            color: #856404;
+            border-color: rgba(255, 181, 72, 0.4);
+            color: #ffd59f;
         }
 
         .meal-badge.lunch {
-            background: #d1ecf1;
-            color: #0c5460;
+            border-color: rgba(95, 170, 255, 0.4);
+            color: #abd3ff;
         }
 
         .meal-badge.dinner {
-            background: #f8d7da;
-            color: #721c24;
+            border-color: rgba(213, 124, 255, 0.4);
+            color: #e4beff;
         }
 
         .meal-badge.snack {
-            background: #d4edda;
-            color: #155724;
+            border-color: rgba(47, 196, 141, 0.4);
+            color: #a0ebca;
         }
 
         .calories {
             font-weight: 600;
-            color: #667eea;
+            color: #8fb2ff;
             margin-left: 10px;
         }
 
@@ -257,107 +301,124 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 16px;
+            background: linear-gradient(140deg, #1f2638 0%, #171f31 100%);
+            border: 1px solid #303853;
             border-radius: 12px;
-            color: white;
+            color: #e9edf8;
             margin-top: 20px;
         }
 
         .total-label {
-            font-size: 1.1rem;
+            font-size: 0.95rem;
+            color: #adb5c8;
         }
 
         .total-value {
-            font-size: 2rem;
+            font-size: 1.7rem;
             font-weight: 700;
         }
 
         .empty-state {
             text-align: center;
             padding: 40px 20px;
-            color: #999;
+            color: #7d869d;
+            border: 1px dashed #31384e;
+            border-radius: 12px;
+            background: #121520;
         }
 
         .empty-state svg {
             width: 60px;
             height: 60px;
             margin-bottom: 15px;
-            opacity: 0.5;
+            opacity: 0.35;
         }
 
         .status-message {
-            padding: 12px;
+            padding: 10px 11px;
             border-radius: 8px;
             margin-top: 10px;
-            font-size: 0.9rem;
+            font-size: 0.82rem;
+            border: 1px solid transparent;
             display: none;
         }
 
         .status-message.success {
-            background: #d4edda;
-            color: #155724;
+            background: rgba(47, 196, 141, 0.14);
+            color: #a3ebcc;
+            border-color: rgba(47, 196, 141, 0.28);
             display: block;
         }
 
         .status-message.error {
-            background: #f8d7da;
-            color: #721c24;
+            background: rgba(239, 91, 113, 0.14);
+            color: #ffb7c2;
+            border-color: rgba(239, 91, 113, 0.28);
             display: block;
         }
 
         .clarification-section {
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 1px solid #eee;
+            margin-top: 18px;
+            padding-top: 18px;
+            border-top: 1px solid #2a3040;
         }
 
         .clarification-section h3 {
-            color: #667eea;
+            color: #dfe6f8;
             margin-bottom: 10px;
         }
 
         .clarification-section p {
             margin-bottom: 15px;
+            font-size: 0.9rem;
+            color: #aab3c8;
             font-weight: 500;
         }
 
         .clarification-section input {
             width: 100%;
             padding: 12px;
-            border: 2px solid #e1e5e9;
+            border: 1px solid #30374a;
+            background: #10131a;
+            color: #e8ebf3;
             border-radius: 8px;
-            font-size: 16px;
+            font-size: 15px;
             margin-bottom: 15px;
         }
 
         .clarification-section input:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #5c8dff;
+            box-shadow: 0 0 0 3px rgba(92, 141, 255, 0.15);
         }
 
         .tabs {
             display: flex;
-            gap: 10px;
+            gap: 8px;
             margin-bottom: 20px;
+            background: #151925;
+            border: 1px solid #2a3040;
+            border-radius: 12px;
+            padding: 6px;
         }
 
         .tab {
             flex: 1;
-            padding: 12px;
-            background: rgba(255, 255, 255, 0.2);
-            color: white;
+            padding: 10px 12px;
+            background: transparent;
+            color: #9ca5ba;
             border: none;
-            border-radius: 12px;
-            font-size: 16px;
+            border-radius: 8px;
+            font-size: 14px;
             font-weight: 600;
             cursor: pointer;
-            transition: background 0.3s;
+            transition: background 0.2s, color 0.2s;
         }
 
         .tab.active {
-            background: white;
-            color: #667eea;
+            background: #2f77ff;
+            color: #ffffff;
         }
 
         .tab-content {
@@ -370,17 +431,25 @@
 
         .summary-day {
             padding: 15px;
-            background: #f8f9fa;
+            background: #121520;
+            border: 1px solid #2a3144;
             border-radius: 12px;
             margin-bottom: 10px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            cursor: pointer;
+            transition: border-color 0.2s ease, background 0.2s ease;
+        }
+
+        .summary-day:hover {
+            border-color: #4a5b85;
+            background: #161b29;
         }
 
         .summary-date {
             font-weight: 600;
-            color: #333;
+            color: #e3e7f3;
         }
 
         .summary-stats {
@@ -388,23 +457,99 @@
         }
 
         .summary-calories {
-            font-size: 1.2rem;
+            font-size: 1.08rem;
             font-weight: 700;
-            color: #667eea;
+            color: #8fb2ff;
         }
 
         .summary-count {
-            font-size: 0.85rem;
-            color: #666;
+            font-size: 0.8rem;
+            color: #939cb2;
+        }
+
+        .range-controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr auto;
+            gap: 8px;
+            margin-bottom: 14px;
+            align-items: end;
+        }
+
+        .range-controls label {
+            font-size: 0.76rem;
+            color: #8f98ad;
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        .range-controls input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #30374a;
+            background: #10131a;
+            color: #e8ebf3;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        .range-controls button {
+            margin-top: 0;
+            width: auto;
+            padding: 10px 12px;
+        }
+
+        .date-details {
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px solid #2a3040;
+        }
+
+        .detail-item {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 10px 0;
+            border-bottom: 1px solid #232838;
+            font-size: 0.88rem;
+        }
+
+        .detail-item:last-child {
+            border-bottom: none;
+        }
+
+        .detail-food {
+            color: #e6e9f3;
+            font-weight: 500;
+        }
+
+        .detail-calories {
+            color: #8fb2ff;
+            font-weight: 600;
+            white-space: nowrap;
         }
 
         @media (max-width: 480px) {
-            .header h1 {
-                font-size: 2rem;
+            body {
+                padding: 14px;
             }
-            
+
+            .header h1 {
+                font-size: 1.6rem;
+            }
+
             .card {
-                padding: 20px;
+                padding: 16px;
+            }
+
+            .tabs {
+                gap: 6px;
+                padding: 5px;
+            }
+
+            .tab {
+                font-size: 13px;
+                padding: 9px 8px;
             }
         }
     </style>
@@ -412,8 +557,8 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🍽️ Food Log</h1>
-            <p>Track your meals naturally</p>
+            <h1>Food Journal</h1>
+            <p>Natural logging with confidence-aware nutrition estimates.</p>
         </div>
 
         <div class="tabs">
@@ -476,6 +621,17 @@
         <div id="summary-tab" class="tab-content">
             <div class="card">
                 <h2 class="section-title">7-Day Summary</h2>
+                <div class="range-controls">
+                    <div>
+                        <label for="summary-start">Start</label>
+                        <input type="date" id="summary-start" />
+                    </div>
+                    <div>
+                        <label for="summary-end">End</label>
+                        <input type="date" id="summary-end" />
+                    </div>
+                    <button class="button" onclick="applySummaryRange()">Apply</button>
+                </div>
                 <div id="summary-content">
                     <div class="empty-state">
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -484,6 +640,7 @@
                         <p>No data available</p>
                     </div>
                 </div>
+                <div id="summary-date-details" class="date-details" style="display: none;"></div>
             </div>
         </div>
     </div>
@@ -508,6 +665,24 @@
             } else if (tabName === 'summary') {
                 loadSummary();
             }
+        }
+
+        function formatIsoDate(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function initializeSummaryDateRange() {
+            const endInput = document.getElementById('summary-end');
+            const startInput = document.getElementById('summary-start');
+            const today = new Date();
+            const weekAgo = new Date();
+            weekAgo.setDate(today.getDate() - 6);
+
+            endInput.value = formatIsoDate(today);
+            startInput.value = formatIsoDate(weekAgo);
         }
 
         // Log food entry
@@ -640,11 +815,18 @@
         // Load 7-day summary
         async function loadSummary() {
             const container = document.getElementById('summary-content');
+            const startInput = document.getElementById('summary-start');
+            const endInput = document.getElementById('summary-end');
             
             container.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
 
             try {
-                const response = await fetch(`${API_BASE}/log/summary`);
+                let query = '';
+                if (startInput.value && endInput.value) {
+                    query = `?start_date=${encodeURIComponent(startInput.value)}&end_date=${encodeURIComponent(endInput.value)}`;
+                }
+
+                const response = await fetch(`${API_BASE}/log/summary${query}`);
                 const data = await response.json();
 
                 if (!data.summary || data.summary.length === 0) {
@@ -665,7 +847,7 @@
                     const caloriesText = calories !== '—' ? `${calories} cal` : 'No data';
                     
                     html += `
-                        <div class="summary-day">
+                        <div class="summary-day" onclick="loadDateDetails('${day.date}')">
                             <div class="summary-date">${formatDate(day.date)}</div>
                             <div class="summary-stats">
                                 <div class="summary-calories">${caloriesText}</div>
@@ -680,6 +862,49 @@
             } catch (error) {
                 container.innerHTML = `<div class="empty-state"><p>Error loading summary</p></div>`;
             }
+        }
+
+        async function loadDateDetails(dateStr) {
+            const details = document.getElementById('summary-date-details');
+            details.style.display = 'block';
+            details.innerHTML = '<div class="empty-state"><p>Loading date details...</p></div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/log/date/${encodeURIComponent(dateStr)}`);
+                const data = await response.json();
+
+                if (!data.entries || data.entries.length === 0) {
+                    details.innerHTML = `<div class="empty-state"><p>No entries found for ${formatDate(dateStr)}</p></div>`;
+                    return;
+                }
+
+                const rows = data.entries.map(entry => {
+                    const calories = entry.calories ? `${entry.calories} cal` : '—';
+                    return `
+                        <div class="detail-item">
+                            <div class="detail-food">${entry.food_name}</div>
+                            <div class="detail-calories">${calories}</div>
+                        </div>
+                    `;
+                }).join('');
+
+                details.innerHTML = `
+                    <h3 class="section-title">${formatDate(dateStr)} Details</h3>
+                    ${rows}
+                    <div class="total-section" style="margin-top: 12px;">
+                        <span class="total-label">Total Calories</span>
+                        <span class="total-value">${data.total_calories}</span>
+                    </div>
+                `;
+            } catch (error) {
+                details.innerHTML = '<div class="empty-state"><p>Error loading date details</p></div>';
+            }
+        }
+
+        function applySummaryRange() {
+            const details = document.getElementById('summary-date-details');
+            details.style.display = 'none';
+            loadSummary();
         }
 
         // Delete an entry
@@ -895,6 +1120,8 @@
                 logFood();
             }
         });
+
+        initializeSummaryDateRange();
     </script>
 </body>
 </html>

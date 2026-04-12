@@ -509,8 +509,22 @@ def get_entries_for_date(date: str) -> List[Dict[str, Any]]:
     
     rows = cursor.fetchall()
     conn.close()
-    
-    return [dict(row) for row in rows]
+
+    entries: List[Dict[str, Any]] = []
+    for row in rows:
+        entry = dict(row)
+        assumptions = entry.get("assumptions")
+        if isinstance(assumptions, str):
+            try:
+                parsed = json.loads(assumptions)
+                entry["assumptions"] = parsed if isinstance(parsed, list) else []
+            except json.JSONDecodeError:
+                entry["assumptions"] = []
+        elif assumptions is None:
+            entry["assumptions"] = []
+        entries.append(entry)
+
+    return entries
 
 
 def get_summary_last_n_days(days: int = 7) -> List[Dict[str, Any]]:
@@ -536,6 +550,32 @@ def get_summary_last_n_days(days: int = 7) -> List[Dict[str, Any]]:
     rows = cursor.fetchall()
     conn.close()
     
+    return [dict(row) for row in rows]
+
+
+def get_summary_by_date_range(start_date: str, end_date: str) -> List[Dict[str, Any]]:
+    """
+    Get total calories grouped by date for an inclusive date range.
+    Returns list of {date, total_calories, entry_count}.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """SELECT
+               logged_date as date,
+               SUM(calories) as total_calories,
+               COUNT(*) as entry_count
+           FROM resolved_entries
+           WHERE logged_date >= ? AND logged_date <= ?
+           GROUP BY logged_date
+           ORDER BY logged_date DESC""",
+        (start_date, end_date)
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
     return [dict(row) for row in rows]
 
 
