@@ -26,3 +26,4 @@ class QueryContext:
 
     query: str
     brand_hint: Optional[str] = None
+    item_hint: Optional[str] = None

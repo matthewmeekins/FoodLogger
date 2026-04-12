@@ -92,6 +92,8 @@ class NutritionService:
 
         branded_query = bool((context.brand_hint or "").strip())
         overlap = self._token_overlap(context.query, candidate.name)
+        item_anchor = context.item_hint or context.query
+        item_overlap = self._token_overlap(item_anchor, candidate.name)
         brand_match = self._has_brand_match(context, candidate)
 
         if branded_query:
@@ -102,11 +104,11 @@ class NutritionService:
                     return False
 
             if brand_match:
-                return overlap >= 0.2 or candidate.source == "web"
-            return candidate.source == "web" and overlap >= 0.6
+                return (overlap >= 0.2 and item_overlap >= 0.2) or candidate.source == "web"
+            return candidate.source == "web" and overlap >= 0.6 and item_overlap >= 0.3
 
         # For generic foods, allow moderate textual overlap.
-        return overlap >= 0.25
+        return overlap >= 0.25 and item_overlap >= 0.34
 
     def _cache_key(self, context: QueryContext, limit: int) -> str:
         brand = (context.brand_hint or "").strip().lower()
@@ -125,6 +127,13 @@ class NutritionService:
 
         if brand_hint and brand_hint in brand:
             score += 0.12
+
+        item_anchor = (context.item_hint or context.query).lower()
+        item_overlap = self._token_overlap(item_anchor, name)
+        if item_overlap >= 0.5:
+            score += 0.12
+        elif item_overlap == 0:
+            score -= 0.18
 
         has_macros = all(v is not None for v in [candidate.calories, candidate.protein_g, candidate.carbs_g, candidate.fat_g])
         if has_macros:

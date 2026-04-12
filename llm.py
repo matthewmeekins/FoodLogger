@@ -80,6 +80,18 @@ Rules for parsing:
 - meal: As before, inferred from time or context
 - unknowns: List any ambiguous or missing details that would help nutrition lookup (e.g., "type of milk", "cooking method")
 
+Component splitting rules:
+- Split compound meal descriptions into separate intents when they include distinct ingredients/add-ins.
+- Use one intent per lookup-target food component.
+- Keep preparation words on the relevant base food only.
+- Include add-ins like butter, oil, sauces, dressings, salt/sugar when explicitly consumed.
+
+Example decomposition:
+- Input: "I had 1 pound of steamed broccoli with about 1 tbsp of salt and 3 tablespoons of butter"
+  - Intent 1: item="broccoli", quantity="1 pound", modifiers=["steamed"], meal inferred
+  - Intent 2: item="salt", quantity="1 tbsp", modifiers=[]
+  - Intent 3: item="butter", quantity="3 tablespoons", modifiers=[]
+
 Set confidence based on clarity of the input.
 logged_date: Today's date unless specified otherwise.
 

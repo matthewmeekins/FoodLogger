@@ -20,10 +20,11 @@ class OpenFoodFactsProvider(NutritionProvider):
             return None
 
     def search(self, context: QueryContext, limit: int = 5) -> List[NutritionCandidate]:
+        search_terms = context.item_hint or context.query
         response = self.http_client.get_json(
             "https://world.openfoodfacts.org/cgi/search.pl",
             params={
-                "search_terms": context.query,
+                "search_terms": search_terms,
                 "search_simple": 1,
                 "action": "process",
                 "json": 1,

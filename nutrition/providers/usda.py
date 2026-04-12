@@ -29,20 +29,34 @@ class USDAProvider(NutritionProvider):
     def search(self, context: QueryContext, limit: int = 5) -> List[NutritionCandidate]:
         if not self.api_key:
             return []
+        queries: List[str] = []
+        if context.item_hint:
+            queries.append(context.item_hint)
+        if context.query and context.query not in queries:
+            queries.append(context.query)
 
-        payload = {
-            "query": context.query,
-            "pageSize": limit,
-            "dataType": ["Branded", "Foundation", "SR Legacy", "Survey (FNDDS)"]
-        }
+        foods: List[Dict[str, Any]] = []
+        seen_ids = set()
+        for q in queries:
+            payload = {
+                "query": q,
+                "pageSize": limit,
+                "dataType": ["Branded", "Foundation", "SR Legacy", "Survey (FNDDS)"]
+            }
 
-        response = self.http_client.post_json(
-            "https://api.nal.usda.gov/fdc/v1/foods/search",
-            payload=payload,
-            params={"api_key": self.api_key},
-        )
+            response = self.http_client.post_json(
+                "https://api.nal.usda.gov/fdc/v1/foods/search",
+                payload=payload,
+                params={"api_key": self.api_key},
+            )
 
-        foods = response.get("foods", [])
+            for food in response.get("foods", []):
+                fdc_id = food.get("fdcId")
+                if fdc_id in seen_ids:
+                    continue
+                seen_ids.add(fdc_id)
+                foods.append(food)
+
         results: List[NutritionCandidate] = []
 
         for food in foods:

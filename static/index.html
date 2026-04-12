@@ -134,6 +134,14 @@
             border-bottom: 1px solid #232838;
         }
 
+        .food-main {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            width: 100%;
+            gap: 10px;
+        }
+
         .food-item:last-child {
             border-bottom: none;
         }
@@ -172,6 +180,20 @@
 
         .food-details {
             flex: 1;
+            cursor: pointer;
+        }
+
+        .food-details:hover .food-name {
+            color: #ffffff;
+        }
+
+        .trace-toggle {
+            font-size: 0.72rem;
+            color: #8ba8ff;
+            margin-top: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            font-weight: 600;
         }
 
         .food-meta {
@@ -179,6 +201,12 @@
             color: #99a2b7;
             margin-top: 6px;
             line-height: 1.45;
+        }
+
+        .entry-time {
+            font-size: 0.73rem;
+            color: #7f89a0;
+            margin-bottom: 3px;
         }
 
         .confidence {
@@ -358,6 +386,13 @@
             display: block;
         }
 
+        .status-message.info {
+            background: rgba(95, 170, 255, 0.14);
+            color: #b7d8ff;
+            border-color: rgba(95, 170, 255, 0.28);
+            display: block;
+        }
+
         .clarification-section {
             margin-top: 18px;
             padding-top: 18px;
@@ -518,6 +553,58 @@
             border-bottom: none;
         }
 
+        .detail-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .trace-panel {
+            margin-top: 10px;
+            padding: 12px;
+            border: 1px solid #2a3144;
+            border-radius: 10px;
+            background: #111522;
+            display: none;
+        }
+
+        .trace-panel.visible {
+            display: block;
+        }
+
+        .trace-section-title {
+            font-size: 0.8rem;
+            color: #a9b5cf;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 6px;
+            font-weight: 700;
+        }
+
+        .trace-block {
+            background: #0d1017;
+            border: 1px solid #252c3c;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 10px;
+            color: #c6cee3;
+            font-size: 0.8rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+
+        .trace-candidate {
+            padding: 8px 0;
+            border-bottom: 1px solid #22293a;
+            font-size: 0.8rem;
+            color: #c7d0e6;
+        }
+
+        .trace-candidate:last-child {
+            border-bottom: none;
+        }
+
         .detail-food {
             color: #e6e9f3;
             font-weight: 500;
@@ -576,21 +663,21 @@
                         id="food-input" 
                         placeholder="e.g., had oatmeal with banana for breakfast and a chicken sandwich for lunch"
                     ></textarea>
-                    <button class="button" onclick="logFood()">Log Food</button>
+                    <button id="log-button" class="button" onclick="logFood()">Log Food</button>
                     <div id="log-status" class="status-message"></div>
                 </div>
                 <div id="clarification-card" class="clarification-section" style="display: none;">
                     <h3 class="section-title">Need More Details</h3>
                     <p id="clarification-question"></p>
                     <input type="text" id="clarification-answer" placeholder="Your answer..." />
-                    <button class="button" onclick="submitClarification()">Continue</button>
+                    <button id="clarify-button" class="button" onclick="submitClarification()">Continue</button>
                     <div id="clarify-status" class="status-message"></div>
                 </div>
                 <div id="manual-card" class="clarification-section" style="display: none;">
                     <h3 class="section-title">Manual Calorie Estimate</h3>
                     <p id="manual-prompt"></p>
                     <input type="number" id="manual-calories" placeholder="Estimated calories" min="1" />
-                    <button class="button" onclick="submitManualEstimate()">Save Estimate</button>
+                    <button id="manual-button" class="button" onclick="submitManualEstimate()">Save Estimate</button>
                     <div id="manual-status" class="status-message"></div>
                 </div>
             </div>
@@ -648,6 +735,7 @@
     <script>
         // Get the API base URL (works for both localhost and network access)
         const API_BASE = window.location.origin;
+        let selectedSummaryDate = null;
 
         // Switch between tabs
         function switchTab(tabName) {
@@ -674,6 +762,29 @@
             return `${year}-${month}-${day}`;
         }
 
+        function formatEntryTime(timestamp) {
+            if (!timestamp) {
+                return '';
+            }
+            const normalized = /Z$|[+-]\d\d:\d\d$/.test(timestamp) ? timestamp : `${timestamp}Z`;
+            const date = new Date(normalized);
+            if (Number.isNaN(date.getTime())) {
+                return '';
+            }
+            return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        }
+
+        function formatNutrient(value) {
+            const num = Number(value);
+            if (!Number.isFinite(num)) {
+                return '0';
+            }
+            return num.toLocaleString(undefined, {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 2,
+            });
+        }
+
         function initializeSummaryDateRange() {
             const endInput = document.getElementById('summary-end');
             const startInput = document.getElementById('summary-start');
@@ -685,12 +796,61 @@
             startInput.value = formatIsoDate(weekAgo);
         }
 
+        function setStatus(element, message, type = null) {
+            if (!element) {
+                return;
+            }
+            if (!message) {
+                element.textContent = '';
+                element.className = 'status-message';
+                return;
+            }
+            element.textContent = message;
+            element.className = `status-message ${type || ''}`.trim();
+        }
+
+        function showStatus(message, type = 'success') {
+            setStatus(document.getElementById('log-status'), message, type);
+        }
+
+        function showClarificationCard(pendingEntry) {
+            const card = document.getElementById('clarification-card');
+            const question = document.getElementById('clarification-question');
+            const answer = document.getElementById('clarification-answer');
+
+            document.getElementById('manual-card').style.display = 'none';
+            card.style.display = 'block';
+            card.dataset.pendingId = pendingEntry.pending_id;
+            question.textContent = pendingEntry.question || 'Please provide more details.';
+            answer.value = '';
+            setStatus(document.getElementById('clarify-status'), '');
+            answer.focus();
+        }
+
+        function showManualCard(data) {
+            const clarification = document.getElementById('clarification-card');
+            const card = document.getElementById('manual-card');
+            const prompt = document.getElementById('manual-prompt');
+            const caloriesInput = document.getElementById('manual-calories');
+
+            clarification.style.display = 'none';
+            card.style.display = 'block';
+            card.dataset.pendingId = data.pending_id;
+            prompt.textContent = data.manual_prompt || 'Please enter your calorie estimate.';
+            caloriesInput.value = '';
+            setStatus(document.getElementById('manual-status'), '');
+            caloriesInput.focus();
+        }
+
         // Log food entry
         async function logFood() {
             const input = document.getElementById('food-input');
-            const status = document.getElementById('log-status');
-            const button = event.target;
+            const button = document.getElementById('log-button');
             const text = input.value.trim();
+
+            if (button.disabled) {
+                return;
+            }
 
             if (!text) {
                 showStatus('Please enter what you ate', 'error');
@@ -699,6 +859,7 @@
 
             button.disabled = true;
             button.textContent = 'Logging...';
+            showStatus('Submitting entry...', 'info');
 
             try {
                 const response = await fetch(`${API_BASE}/log`, {
@@ -718,7 +879,7 @@
                 if (data.status === 'needs_clarification') {
                     document.getElementById('manual-card').style.display = 'none';
                     showClarificationCard(data.pending_entries[0]); // Assume one for now
-                    showStatus('Please answer the question below', 'success');
+                    showStatus('Need a bit more detail to finish this entry.', 'info');
                 } else {
                     showStatus(`✓ Logged ${data.foods_logged} item(s) successfully!`, 'success');
                     input.value = '';
@@ -767,8 +928,10 @@
                     const calories = entry.calories ? `<span class="calories">${entry.calories} cal</span>` : '';
                     const confidence = entry.confidence_level ? `<span class="confidence ${entry.confidence_level}">${entry.confidence_level}</span>` : '';
                     const source = entry.source ? `<span class="source">${entry.source}</span>` : '';
+                    const entryTime = formatEntryTime(entry.created_at);
+                    const timeLine = entryTime ? `<div class="entry-time">${entryTime}</div>` : '';
                     const macros = entry.protein_g || entry.carbs_g || entry.fat_g ? 
-                        `<div class="macros">P: ${entry.protein_g || 0}g | C: ${entry.carbs_g || 0}g | F: ${entry.fat_g || 0}g</div>` : '';
+                        `<div class="macros">Macros: Protein ${formatNutrient(entry.protein_g)}g | Carbs ${formatNutrient(entry.carbs_g)}g | Fat ${formatNutrient(entry.fat_g)}g</div>` : '';
                     const assumptions = entry.assumptions && entry.assumptions.length > 0 ? 
                         `<div class="assumptions-toggle" onclick="toggleAssumptions(this)">Why this estimate? ▼</div>
                          <div class="assumptions-panel" style="display: none;">
@@ -777,21 +940,143 @@
                     
                     html += `
                         <div class="food-item">
-                            <div class="food-details">
-                                <div class="food-name">
-                                    ${entry.food_name}
-                                    ${mealBadge}
-                                    ${confidence}
-                                    ${source}
+                            <div class="food-main">
+                                <div class="food-details" onclick="toggleEntryTrace(${entry.id})">
+                                    <div class="food-name">
+                                        ${entry.food_name}
+                                        ${mealBadge}
+                                        ${confidence}
+                                        ${source}
+                                    </div>
+                                    <div class="food-meta">
+                                        ${timeLine}
+                                        ${calories}
+                                        ${macros}
+                                        ${assumptions}
+                                    </div>
+                                    <div class="trace-toggle" id="trace-toggle-${entry.id}">Trace ▼</div>
                                 </div>
-                                <div class="food-meta">
-                                    ${calories}
-                                    ${macros}
-                                    ${assumptions}
+                                <div class="food-item-info">
+                                    <button class="delete-btn" onclick="deleteEntry(${entry.id})">Delete</button>
                                 </div>
                             </div>
-                            <div class="food-item-info">
-                                <button class="delete-btn" onclick="deleteEntry(${entry.id})">Delete</button>
+                        </div>
+                        <div id="trace-${entry.id}" class="trace-panel"></div>
+                    `;
+                });
+
+                container.innerHTML = html;
+                
+                // Show total if we have calorie data
+                if (data.total_calories > 0) {
+                    document.getElementById('total-calories').textContent = data.total_calories;
+                    totalSection.style.display = 'block';
+                } else {
+                    totalSection.style.display = 'none';
+                }
+
+            } catch (error) {
+                container.innerHTML = `<div class="empty-state"><p>Error loading entries</p></div>`;
+            }
+        }
+
+        async function toggleEntryTrace(entryId) {
+            const panel = document.getElementById(`trace-${entryId}`);
+            const toggle = document.getElementById(`trace-toggle-${entryId}`);
+            if (!panel || !toggle) {
+                return;
+            }
+
+            if (panel.classList.contains('visible')) {
+                panel.classList.remove('visible');
+                toggle.textContent = 'Trace ▼';
+                return;
+            }
+
+            if (!panel.dataset.loaded) {
+                panel.innerHTML = '<div class="trace-block">Loading trace...</div>';
+                panel.classList.add('visible');
+                toggle.textContent = 'Trace ▲';
+
+                try {
+                    const response = await fetch(`${API_BASE}/log/${entryId}/trace`);
+                    if (!response.ok) {
+                        throw new Error('Trace not available');
+                    }
+
+                    const data = await response.json();
+                    const promptText = data.prompt_context?.raw_input_text || '—';
+                    const parsedJson = JSON.stringify(data.response_context?.parsed_json || {}, null, 2);
+                    const candidates = data.response_context?.candidates || [];
+
+                    const candidatesHtml = candidates.length > 0
+                        ? candidates.slice(0, 8).map(c => `
+                            <div class="trace-candidate">
+                                <strong>${c.name}</strong> (${c.source || 'unknown'})
+                                <div>Score: ${(c.score ?? 0).toFixed ? c.score.toFixed(3) : c.score}</div>
+                                <div>Calories: ${c.calories ?? '—'}</div>
+                            </div>
+                        `).join('')
+                        : '<div class="trace-block">No candidate response data.</div>';
+
+                    panel.innerHTML = `
+                        <div class="trace-section-title">Original Journal Input</div>
+                        <div class="trace-block">${promptText}</div>
+                        <div class="trace-section-title">Parsed LLM Response</div>
+                        <div class="trace-block">${parsedJson}</div>
+                        <div class="trace-section-title">Candidate Responses</div>
+                        ${candidatesHtml}
+                    `;
+                    panel.dataset.loaded = '1';
+                } catch (error) {
+                    panel.innerHTML = '<div class="trace-block">Could not load trace details for this entry.</div>';
+                }
+            } else {
+                panel.classList.add('visible');
+                toggle.textContent = 'Trace ▲';
+            }
+        }
+
+        // Load 7-day summary
+        async function loadSummary() {
+            const container = document.getElementById('summary-content');
+            const startInput = document.getElementById('summary-start');
+            const endInput = document.getElementById('summary-end');
+            
+            container.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
+
+            try {
+                let query = '';
+                if (startInput.value && endInput.value) {
+                    query = `?start_date=${encodeURIComponent(startInput.value)}&end_date=${encodeURIComponent(endInput.value)}`;
+                }
+
+                const response = await fetch(`${API_BASE}/log/summary${query}`);
+                const data = await response.json();
+
+                if (!data.summary || data.summary.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                            </svg>
+                            <p>No data available</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                let html = '';
+                data.summary.forEach(day => {
+                    const calories = day.total_calories || '—';
+                    const caloriesText = calories !== '—' ? `${calories} cal` : 'No data';
+                    
+                    html += `
+                        <div class="summary-day" onclick="loadDateDetails('${day.date}')">
+                            <div class="summary-date">${formatDate(day.date)}</div>
+                            <div class="summary-stats">
+                                <div class="summary-calories">${caloriesText}</div>
+                                <div class="summary-count">${day.entry_count} entries</div>
                             </div>
                         </div>
                     `;
@@ -866,6 +1151,7 @@
 
         async function loadDateDetails(dateStr) {
             const details = document.getElementById('summary-date-details');
+            selectedSummaryDate = dateStr;
             details.style.display = 'block';
             details.innerHTML = '<div class="empty-state"><p>Loading date details...</p></div>';
 
@@ -880,10 +1166,15 @@
 
                 const rows = data.entries.map(entry => {
                     const calories = entry.calories ? `${entry.calories} cal` : '—';
+                    const entryTime = formatEntryTime(entry.created_at);
+                    const foodLabel = entryTime ? `${entry.food_name} · ${entryTime}` : entry.food_name;
                     return `
                         <div class="detail-item">
-                            <div class="detail-food">${entry.food_name}</div>
-                            <div class="detail-calories">${calories}</div>
+                            <div class="detail-food">${foodLabel}</div>
+                            <div class="detail-actions">
+                                <div class="detail-calories">${calories}</div>
+                                <button class="delete-btn" onclick="deleteEntry(${entry.id})">Delete</button>
+                            </div>
                         </div>
                     `;
                 }).join('');
@@ -924,63 +1215,14 @@
 
                 // Reload today's entries
                 loadTodayEntries();
+                loadSummary();
+                if (selectedSummaryDate) {
+                    loadDateDetails(selectedSummaryDate);
+                }
 
             } catch (error) {
                 alert(`Error: ${error.message}`);
             }
-        }
-
-        // Toggle assumptions panel
-        function toggleAssumptions(button) {
-            const panel = button.nextElementSibling;
-            if (!panel) {
-                return;
-            }
-
-            if (panel.style.display === 'none' || panel.style.display === '') {
-                panel.style.display = 'block';
-                button.textContent = 'Why this estimate? ▲';
-            } else {
-                panel.style.display = 'none';
-                button.textContent = 'Why this estimate? ▼';
-            }
-        }
-
-        // Show clarification card
-        function showClarificationCard(pending) {
-            const card = document.getElementById('clarification-card');
-            const manualCard = document.getElementById('manual-card');
-            const question = document.getElementById('clarification-question');
-            const answer = document.getElementById('clarification-answer');
-            const status = document.getElementById('clarify-status');
-            
-            manualCard.style.display = 'none';
-            question.textContent = pending.question;
-            answer.value = '';
-            status.className = 'status-message';
-            card.style.display = 'block';
-            
-            // Store pending ID
-            card.dataset.pendingId = pending.pending_id;
-        }
-
-        function showManualCard(data) {
-            const clarificationCard = document.getElementById('clarification-card');
-            const manualCard = document.getElementById('manual-card');
-            const prompt = document.getElementById('manual-prompt');
-            const caloriesInput = document.getElementById('manual-calories');
-            const status = document.getElementById('manual-status');
-
-            clarificationCard.style.display = 'none';
-            manualCard.dataset.pendingId = data.pending_id;
-            prompt.textContent = data.manual_prompt || 'Please estimate calories for this item.';
-            if (typeof data.confidence_score_percent === 'number') {
-                prompt.textContent += ` Current confidence: ${data.confidence_score_percent}/100.`;
-            }
-            caloriesInput.value = '';
-            status.className = 'status-message';
-            status.textContent = data.message || '';
-            manualCard.style.display = 'block';
         }
 
         // Submit clarification answer
@@ -988,9 +1230,13 @@
             const card = document.getElementById('clarification-card');
             const answer = document.getElementById('clarification-answer');
             const status = document.getElementById('clarify-status');
-            const button = event.target;
+            const button = document.getElementById('clarify-button');
             const pendingId = card.dataset.pendingId;
             const text = answer.value.trim();
+
+            if (button.disabled) {
+                return;
+            }
 
             if (!text) {
                 status.textContent = 'Please provide an answer';
@@ -1000,6 +1246,7 @@
 
             button.disabled = true;
             button.textContent = 'Submitting...';
+            setStatus(status, 'Submitting clarification...', 'info');
 
             try {
                 const response = await fetch(`${API_BASE}/clarify`, {
@@ -1028,14 +1275,13 @@
                         document.querySelectorAll('.tab')[1].click();
                     }, 1000);
                 } else if (data.status === 'needs_clarification') {
-                    status.textContent = data.message || 'More details are needed';
-                    status.className = 'status-message error';
+                    setStatus(status, data.message || 'More details are needed', 'info');
                     document.getElementById('clarification-question').textContent = data.question;
                 } else if (data.status === 'unresolved') {
                     showManualCard(data);
+                    showStatus('Automatic matching reached its limit. Please enter a manual estimate.', 'info');
                 } else {
-                    status.textContent = 'Unexpected response from server';
-                    status.className = 'status-message error';
+                    setStatus(status, 'Unexpected response from server', 'error');
                 }
 
             } catch (error) {
@@ -1051,9 +1297,13 @@
             const card = document.getElementById('manual-card');
             const status = document.getElementById('manual-status');
             const caloriesInput = document.getElementById('manual-calories');
-            const button = event.target;
+            const button = document.getElementById('manual-button');
             const pendingId = parseInt(card.dataset.pendingId);
             const calories = parseInt(caloriesInput.value, 10);
+
+            if (button.disabled) {
+                return;
+            }
 
             if (!calories || calories <= 0) {
                 status.textContent = 'Please enter a valid calorie estimate';
@@ -1063,6 +1313,7 @@
 
             button.disabled = true;
             button.textContent = 'Saving...';
+            setStatus(status, 'Saving manual estimate...', 'info');
 
             try {
                 const response = await fetch(`${API_BASE}/manual-estimate`, {
@@ -1117,7 +1368,30 @@
         document.getElementById('food-input').addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
+                if (e.repeat) {
+                    return;
+                }
                 logFood();
+            }
+        });
+
+        document.getElementById('clarification-answer').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (e.repeat) {
+                    return;
+                }
+                submitClarification();
+            }
+        });
+
+        document.getElementById('manual-calories').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (e.repeat) {
+                    return;
+                }
+                submitManualEstimate();
             }
         });
 
