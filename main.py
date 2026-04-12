@@ -3,6 +3,8 @@ FastAPI application for food logging system.
 """
 
 import os
+import json
+import re
 from datetime import date
 from typing import Dict, Any
 from fastapi import FastAPI, Request, HTTPException
@@ -77,8 +79,120 @@ def generate_question(intent: IntentItem, candidate: NutritionCandidate) -> str:
     return f"Can you provide more details about the {intent.item}?"
 
 
+def _safe_json_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(v) for v in value]
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+            if isinstance(decoded, list):
+                return [str(v) for v in decoded]
+        except json.JSONDecodeError:
+            return []
+    return []
+
+
+def _extract_quantity_from_text(text: str) -> str | None:
+    """Best-effort quantity extraction from clarification answer text."""
+    if not text:
+        return None
+
+    patterns = [
+        r"\b(?:half|quarter|one|two|three|four|five|six|seven|eight|nine|ten|\d+(?:\.\d+)?)\s*(?:cup|cups|tbsp|tablespoon|tablespoons|tsp|teaspoon|teaspoons|oz|ounce|ounces|g|gram|grams|ml|slice|slices|bowl|bowls|piece|pieces|serving|servings|can|cans)\b",
+        r"\b\d+(?:\.\d+)?\s*(?:oz|g|ml)\b",
+    ]
+
+    lowered = text.lower()
+    for pattern in patterns:
+        match = re.search(pattern, lowered)
+        if match:
+            return match.group(0).strip()
+
+    return None
+
+
+def _merge_modifiers(existing: list[str], answer: str) -> list[str]:
+    """Merge concise modifier phrases from clarification answer."""
+    merged = list(existing)
+    if not answer:
+        return merged
+
+    candidates = []
+    for part in re.split(r"[,;]", answer):
+        phrase = part.strip().lower()
+        if not phrase:
+            continue
+        if any(k in phrase for k in ["no ", "without ", "extra ", "with ", "homemade", "grilled", "fried", "baked", "skinless"]):
+            candidates.append(phrase)
+
+    for phrase in candidates:
+        if phrase not in merged:
+            merged.append(phrase)
+
+    return merged
+
+
+def _select_intent_for_pending(structured_intent: StructuredIntent, pending: Dict[str, Any]) -> IntentItem | None:
+    """Pick the intent matching the pending row's intent index, with safe fallbacks."""
+    intents = structured_intent.intents or []
+    if not intents:
+        return None
+
+    idx = pending.get("intent_index")
+    if isinstance(idx, int) and 0 <= idx < len(intents):
+        return intents[idx]
+
+    pending_name = (pending.get("food_name") or "").lower()
+    for intent in intents:
+        if intent.item and intent.item.lower() in pending_name:
+            return intent
+
+    return intents[0]
+
+
+def _intent_matches_pending(intent: IntentItem, pending: Dict[str, Any]) -> bool:
+    """Check whether selected intent is semantically aligned with the pending target item."""
+    pending_name = (pending.get("food_name") or "").lower()
+    item = (intent.item or "").lower()
+    if not pending_name or not item:
+        return False
+
+    pending_tokens = set(re.findall(r"[a-z0-9']+", pending_name))
+    item_tokens = set(re.findall(r"[a-z0-9']+", item))
+    if not pending_tokens or not item_tokens:
+        return False
+
+    overlap = len(pending_tokens.intersection(item_tokens)) / max(1, len(item_tokens))
+    return overlap >= 0.35 or item in pending_name or pending_name in item
+
+
+def _text_overlap_ratio(left: str, right: str) -> float:
+    left_tokens = set(re.findall(r"[a-z0-9']+", (left or "").lower()))
+    right_tokens = set(re.findall(r"[a-z0-9']+", (right or "").lower()))
+    if not left_tokens:
+        return 0.0
+    return len(left_tokens.intersection(right_tokens)) / len(left_tokens)
+
+
+def _build_unresolved_response(pending_id: int, food_name: str, confidence_score: float) -> Dict[str, Any]:
+    confidence_percent = int(round(max(0.0, min(confidence_score, 1.0)) * 100))
+    return {
+        "status": "unresolved",
+        "pending_id": pending_id,
+        "food_name": food_name,
+        "confidence_score_percent": confidence_percent,
+        "manual_required": True,
+        "manual_prompt": "Confidence remained below auto-log threshold. Please estimate calories for this item.",
+        "message": f"Max clarification rounds reached ({MAX_CLARIFICATION_ROUNDS}). Could not resolve this item automatically.",
+    }
+
+
 # Load environment variables
 load_dotenv()
+
+MAX_CLARIFICATION_ROUNDS = max(1, int(os.getenv("MAX_CLARIFICATION_ROUNDS", "3")))
 
 # Initialize FastAPI app
 app = FastAPI(title="Food Logging System")
@@ -198,12 +312,23 @@ async def log_food(request: Request) -> Dict[str, Any]:
                     resolved_ids.append(resolved_id)
                 else:
                     # Generate question and save to pending
-                    question = generate_question(intent, top_candidate)
+                    fallback_question = generate_question(intent, top_candidate)
+                    question = llm.generate_clarification_question(
+                        api_key=api_key,
+                        original_input=input_text,
+                        item=intent.item,
+                        brand=intent.brand,
+                        modifiers=intent.modifiers,
+                        quantity=intent.quantity,
+                        candidate_name=top_candidate.name,
+                        candidate_source=top_candidate.source,
+                        fallback_question=fallback_question,
+                    )
                     pending_id = database.insert_pending_entry(
                         parsed_id=parsed_id,
                         intent_index=intent_index,
                         input_text=input_text,
-                        food_name=top_candidate.name,
+                        food_name=intent.item,
                         brand=intent.brand,
                         modifiers=intent.modifiers,
                         quantity=intent.quantity,
@@ -217,10 +342,35 @@ async def log_food(request: Request) -> Dict[str, Any]:
                     )
                     pending_summaries.append({
                         "pending_id": pending_id,
-                        "food_name": top_candidate.name,
+                        "food_name": intent.item,
                         "question": question,
                         "confidence_level": confidence_level,
                     })
+            else:
+                # No acceptable candidate found; force clarification instead of silent success.
+                question = f"I could not find a confident match for '{intent.item}'. What portion size did you have?"
+                pending_id = database.insert_pending_entry(
+                    parsed_id=parsed_id,
+                    intent_index=intent_index,
+                    input_text=input_text,
+                    food_name=intent.item,
+                    brand=intent.brand,
+                    modifiers=intent.modifiers,
+                    quantity=intent.quantity,
+                    meal=intent.meal,
+                    logged_date=structured_intent.logged_date,
+                    confidence_score=0.0,
+                    confidence_level="low",
+                    source=None,
+                    assumptions=["Could not find a reliable nutrition source match"],
+                    question=question,
+                )
+                pending_summaries.append({
+                    "pending_id": pending_id,
+                    "food_name": intent.item,
+                    "question": question,
+                    "confidence_level": "low",
+                })
         
         # Step 5: Return appropriate response
         if pending_summaries:
@@ -275,18 +425,69 @@ async def clarify_entry(request: Request) -> Dict[str, Any]:
         pending = database.get_pending_entry(pending_id)
         if not pending:
             raise HTTPException(status_code=404, detail="Pending entry not found")
+
+        current_rounds = int(pending.get("clarification_rounds") or 0)
+        next_round = current_rounds + 1
+        database.update_pending_entry(pending_id, clarification_rounds=next_round)
         
-        # Re-process with answer: append answer to original input
-        updated_input = f"{pending['input_text']} {answer}"
-        
-        # Re-parse structured intent
-        structured_intent: StructuredIntent = llm.parse_structured_intent(updated_input, api_key)
-        
-        # For simplicity, assume single intent and take the first
-        if not structured_intent.intents:
-            raise HTTPException(status_code=400, detail="No intents found in updated input")
-        
-        intent = structured_intent.intents[0]  # Assume one for now
+        # Re-process with a targeted context for this pending intent only.
+        context_parts = [pending.get("brand") or "", pending.get("food_name") or ""]
+        context_parts.extend(_safe_json_list(pending.get("modifiers")))
+        if pending.get("quantity"):
+            context_parts.append(str(pending.get("quantity")))
+        base_input = " ".join([p for p in context_parts if p]).strip()
+        if not base_input:
+            base_input = "food item"
+
+        updated_input = f"{base_input}. Clarification: {answer}".strip()
+
+        # Re-parse structured intent and select the specific pending intent by index.
+        intent: IntentItem
+        try:
+            structured_intent: StructuredIntent = llm.parse_structured_intent(updated_input, api_key)
+            selected = _select_intent_for_pending(structured_intent, pending)
+            if not selected or not selected.item:
+                raise ValueError("No valid targeted intent returned from parser")
+            if not _intent_matches_pending(selected, pending):
+                raise ValueError("Targeted intent drifted from pending item")
+            intent = selected
+        except Exception:
+            fallback_item = (pending.get("food_name") or "food item").strip()
+            intent = IntentItem(
+                brand=pending.get("brand"),
+                item=fallback_item,
+                modifiers=_safe_json_list(pending.get("modifiers")),
+                quantity=pending.get("quantity"),
+                meal=pending.get("meal"),
+                unknowns=[],
+            )
+
+        # Convergence enrichment: preserve known pending context and fill missing fields from answer.
+        if not intent.brand and pending.get("brand"):
+            intent.brand = pending.get("brand")
+        if (not intent.quantity) and pending.get("quantity"):
+            intent.quantity = pending.get("quantity")
+        if not intent.quantity:
+            extracted_quantity = _extract_quantity_from_text(answer)
+            if extracted_quantity:
+                intent.quantity = extracted_quantity
+
+        merged_modifiers = _merge_modifiers(_safe_json_list(pending.get("modifiers")), answer)
+        if intent.modifiers:
+            merged_modifiers = _merge_modifiers(merged_modifiers, ", ".join(intent.modifiers))
+        intent.modifiers = merged_modifiers
+        if not intent.meal and pending.get("meal"):
+            intent.meal = pending.get("meal")
+
+        # Persist enriched pending context for subsequent clarification turns.
+        database.update_pending_entry(
+            pending_id,
+            food_name=intent.item,
+            brand=intent.brand,
+            modifiers=intent.modifiers,
+            quantity=intent.quantity,
+            meal=intent.meal,
+        )
         
         # Re-lookup nutrition
         query_parts = [intent.item]
@@ -301,17 +502,94 @@ async def clarify_entry(request: Request) -> Dict[str, Any]:
         candidates = nutrition_service.search(context, limit=5)
         
         if not candidates:
-            raise HTTPException(status_code=400, detail="No nutrition candidates found")
+            fallback_question = (
+                f"What exact menu item name and portion size should be used for {intent.item}?"
+                if (intent.brand or "") else f"What exact portion size did you consume for {intent.item}?"
+            )
+            question = llm.generate_clarification_question(
+                api_key=api_key,
+                original_input=updated_input,
+                item=intent.item,
+                brand=intent.brand,
+                modifiers=intent.modifiers,
+                quantity=intent.quantity,
+                candidate_name=None,
+                candidate_source=None,
+                fallback_question=fallback_question,
+            )
+            database.update_pending_entry(
+                pending_id,
+                question=question,
+                confidence_score=0.0,
+                confidence_level="low",
+                source=None,
+            )
+            if next_round >= MAX_CLARIFICATION_ROUNDS:
+                return _build_unresolved_response(pending_id, intent.item, 0.0)
+            return {
+                "status": "needs_clarification",
+                "pending_id": pending_id,
+                "question": question,
+                "message": "Still need more clarification"
+            }
         
         top_candidate = candidates[0]
+        semantic_overlap = _text_overlap_ratio(intent.item, top_candidate.name)
+        if semantic_overlap < 0.25:
+            fallback_question = f"Please confirm the exact item name for {intent.item} and provide the serving amount."
+            question = llm.generate_clarification_question(
+                api_key=api_key,
+                original_input=updated_input,
+                item=intent.item,
+                brand=intent.brand,
+                modifiers=intent.modifiers,
+                quantity=intent.quantity,
+                candidate_name=top_candidate.name,
+                candidate_source=top_candidate.source,
+                fallback_question=fallback_question,
+            )
+            database.update_pending_entry(
+                pending_id,
+                question=question,
+                confidence_score=0.0,
+                confidence_level="low",
+                source=None,
+            )
+            if next_round >= MAX_CLARIFICATION_ROUNDS:
+                return _build_unresolved_response(pending_id, intent.item, 0.0)
+            return {
+                "status": "needs_clarification",
+                "pending_id": pending_id,
+                "question": question,
+                "message": "Still need more clarification"
+            }
+
         confidence_score = evaluate_confidence(intent, top_candidate, query)
         confidence_level = get_confidence_level(confidence_score)
         
         if confidence_level != "high":
             # Still not confident, return new question
-            question = generate_question(intent, top_candidate)
-            # Update pending entry with new question
-            # For simplicity, just return needs_clarification again
+            fallback_question = generate_question(intent, top_candidate)
+            question = llm.generate_clarification_question(
+                api_key=api_key,
+                original_input=updated_input,
+                item=intent.item,
+                brand=intent.brand,
+                modifiers=intent.modifiers,
+                quantity=intent.quantity,
+                candidate_name=top_candidate.name,
+                candidate_source=top_candidate.source,
+                fallback_question=fallback_question,
+            )
+            database.update_pending_entry(
+                pending_id,
+                question=question,
+                confidence_score=confidence_score,
+                confidence_level=confidence_level,
+                source=top_candidate.source,
+            )
+            if next_round >= MAX_CLARIFICATION_ROUNDS:
+                return _build_unresolved_response(pending_id, intent.item, confidence_score)
             return {
                 "status": "needs_clarification",
                 "pending_id": pending_id,
@@ -380,6 +658,51 @@ def get_today_entries() -> Dict[str, Any]:
         "entries": entries,
         "total_calories": total_calories,
         "entry_count": len(entries)
+    }
+
+
+@app.post("/manual-estimate")
+async def manual_estimate(request: Request) -> Dict[str, Any]:
+    """Finalize an unresolved pending entry using user-provided manual calories."""
+    data = await request.json()
+    pending_id = data.get("pending_id")
+    calories = data.get("calories")
+
+    if not pending_id or not isinstance(pending_id, int):
+        raise HTTPException(status_code=400, detail="pending_id must be an integer")
+
+    try:
+        calories_value = int(calories)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="calories must be a number")
+
+    if calories_value <= 0:
+        raise HTTPException(status_code=400, detail="calories must be greater than 0")
+
+    pending = database.get_pending_entry(pending_id)
+    if not pending:
+        raise HTTPException(status_code=404, detail="Pending entry not found")
+
+    resolved_id = database.insert_resolved_entry(
+        parsed_id=pending["parsed_id"],
+        food_name=pending.get("food_name") or "manual entry",
+        calories=calories_value,
+        meal=pending.get("meal"),
+        logged_date=pending["logged_date"],
+        confidence_score=0.0,
+        confidence_level="manual",
+        source="manual",
+        assumptions=["Calories manually estimated by user after unresolved clarification"],
+    )
+
+    database.delete_pending_entry(pending_id)
+
+    return {
+        "status": "resolved_manual",
+        "resolved_id": resolved_id,
+        "food_name": pending.get("food_name"),
+        "calories": calories_value,
+        "message": "Manual calorie estimate saved.",
     }
 
 

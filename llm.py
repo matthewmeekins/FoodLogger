@@ -88,6 +88,20 @@ Examples:
 """
 
 
+CLARIFICATION_SYSTEM_PROMPT = """You are a helpful food logging assistant.
+Write exactly one natural, concise clarification question to help identify accurate nutrition.
+
+Rules:
+- Ask only one question.
+- Keep it under 20 words.
+- Use clinical tone: neutral, direct, and specific.
+- Avoid conversational fillers, empathy phrases, or casual language.
+- Prefer missing portion size first, then key prep details, then brand/menu specificity.
+- Do not mention confidence scores or internal system details.
+- Return plain text only, no JSON and no extra commentary.
+"""
+
+
 def parse_food_entry(input_text: str, api_key: str) -> ParsedEntry:
     """
     Send input text to OpenAI and return validated ParsedEntry.
@@ -156,3 +170,49 @@ def parse_structured_intent(input_text: str, api_key: str) -> StructuredIntent:
     structured_intent = StructuredIntent(**parsed_json)
     
     return structured_intent
+
+
+def generate_clarification_question(
+    *,
+    api_key: str,
+    original_input: str,
+    item: str,
+    brand: str | None,
+    modifiers: list[str],
+    quantity: str | None,
+    candidate_name: str | None,
+    candidate_source: str | None,
+    fallback_question: str,
+) -> str:
+    """Generate a natural clarification question with OpenAI, fallback to rule-based text."""
+    try:
+        client = OpenAI(api_key=api_key)
+
+        user_prompt = (
+            f"Original user input: {original_input}\n"
+            f"Parsed item: {item}\n"
+            f"Brand: {brand or 'unknown'}\n"
+            f"Modifiers: {', '.join(modifiers) if modifiers else 'none'}\n"
+            f"Quantity: {quantity or 'missing'}\n"
+            f"Top candidate: {candidate_name or 'none'}\n"
+            f"Candidate source: {candidate_source or 'none'}\n"
+            f"Fallback question: {fallback_question}\n"
+            "Write the best single clarification question now."
+        )
+
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": CLARIFICATION_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.2,
+            max_tokens=60,
+        )
+
+        content = (response.choices[0].message.content or "").strip()
+        if content:
+            return content
+        return fallback_question
+    except Exception:
+        return fallback_question

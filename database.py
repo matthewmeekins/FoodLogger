@@ -38,6 +38,10 @@ RESOLVED_ENTRY_EXTRA_COLUMNS = [
     ("assumptions", "TEXT"),  # json
 ]
 
+PENDING_ENTRY_EXTRA_COLUMNS = [
+    ("clarification_rounds", "INTEGER DEFAULT 0"),
+]
+
 
 def get_connection() -> sqlite3.Connection:
     """Get a database connection with row factory enabled."""
@@ -55,6 +59,18 @@ def _ensure_resolved_entry_columns(cursor: sqlite3.Cursor) -> None:
         if column_name not in existing_columns:
             cursor.execute(
                 f"ALTER TABLE resolved_entries ADD COLUMN {column_name} {column_type}"
+            )
+
+
+def _ensure_pending_entry_columns(cursor: sqlite3.Cursor) -> None:
+    """Add missing pending-entry columns for existing databases."""
+    cursor.execute("PRAGMA table_info(pending_entries)")
+    existing_columns = {row[1] for row in cursor.fetchall()}
+
+    for column_name, column_type in PENDING_ENTRY_EXTRA_COLUMNS:
+        if column_name not in existing_columns:
+            cursor.execute(
+                f"ALTER TABLE pending_entries ADD COLUMN {column_name} {column_type}"
             )
 
 
@@ -149,12 +165,14 @@ def init_db() -> None:
             source            TEXT,
             assumptions       TEXT,  -- json list
             question          TEXT,
+            clarification_rounds INTEGER DEFAULT 0,
             created_at        TEXT NOT NULL
         )
     """)
 
     # Ensure existing databases are upgraded with any missing nutrient columns.
     _ensure_resolved_entry_columns(cursor)
+    _ensure_pending_entry_columns(cursor)
     
     conn.commit()
     conn.close()
@@ -287,7 +305,7 @@ def insert_pending_entry(
     logged_date: str,
     confidence_score: float,
     confidence_level: str,
-    source: str,
+    source: Optional[str],
     assumptions: List[str],
     question: str,
 ) -> int:
@@ -300,12 +318,13 @@ def insert_pending_entry(
     created_at = datetime.utcnow().isoformat()
     cursor.execute(
         """INSERT INTO pending_entries 
-           (parsed_id, intent_index, food_name, brand, modifiers, quantity, meal, logged_date,
-            confidence_score, confidence_level, source, assumptions, question, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           (parsed_id, intent_index, input_text, food_name, brand, modifiers, quantity, meal, logged_date,
+            confidence_score, confidence_level, source, assumptions, question, clarification_rounds, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             parsed_id,
             intent_index,
+            input_text,
             food_name,
             brand,
             json.dumps(modifiers),
@@ -317,6 +336,7 @@ def insert_pending_entry(
             source,
             json.dumps(assumptions),
             question,
+            0,
             created_at,
         )
     )
@@ -337,7 +357,7 @@ def get_pending_entry(pending_id: int) -> Optional[Dict[str, Any]]:
     
     cursor.execute(
         """SELECT id, parsed_id, intent_index, input_text, food_name, brand, modifiers, quantity, meal, logged_date,
-                  confidence_score, confidence_level, source, assumptions, question, created_at
+                  confidence_score, confidence_level, source, assumptions, question, clarification_rounds, created_at
            FROM pending_entries 
            WHERE id = ?""",
         (pending_id,)
@@ -360,6 +380,73 @@ def delete_pending_entry(pending_id: int) -> None:
     
     cursor.execute("DELETE FROM pending_entries WHERE id = ?", (pending_id,))
     
+    conn.commit()
+    conn.close()
+
+
+def update_pending_entry(
+    pending_id: int,
+    *,
+    food_name: Optional[str] = None,
+    brand: Optional[str] = None,
+    modifiers: Optional[List[str]] = None,
+    quantity: Optional[str] = None,
+    meal: Optional[str] = None,
+    confidence_score: Optional[float] = None,
+    confidence_level: Optional[str] = None,
+    source: Optional[str] = None,
+    assumptions: Optional[List[str]] = None,
+    question: Optional[str] = None,
+    clarification_rounds: Optional[int] = None,
+) -> None:
+    """Update fields on an existing pending entry to improve clarification convergence."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    updates: List[str] = []
+    values: List[Any] = []
+
+    if food_name is not None:
+        updates.append("food_name = ?")
+        values.append(food_name)
+    if brand is not None:
+        updates.append("brand = ?")
+        values.append(brand)
+    if modifiers is not None:
+        updates.append("modifiers = ?")
+        values.append(json.dumps(modifiers))
+    if quantity is not None:
+        updates.append("quantity = ?")
+        values.append(quantity)
+    if meal is not None:
+        updates.append("meal = ?")
+        values.append(meal)
+    if confidence_score is not None:
+        updates.append("confidence_score = ?")
+        values.append(confidence_score)
+    if confidence_level is not None:
+        updates.append("confidence_level = ?")
+        values.append(confidence_level)
+    if source is not None:
+        updates.append("source = ?")
+        values.append(source)
+    if assumptions is not None:
+        updates.append("assumptions = ?")
+        values.append(json.dumps(assumptions))
+    if question is not None:
+        updates.append("question = ?")
+        values.append(question)
+    if clarification_rounds is not None:
+        updates.append("clarification_rounds = ?")
+        values.append(clarification_rounds)
+
+    if not updates:
+        conn.close()
+        return
+
+    values.append(pending_id)
+    cursor.execute(f"UPDATE pending_entries SET {', '.join(updates)} WHERE id = ?", values)
+
     conn.commit()
     conn.close()
 
@@ -412,7 +499,8 @@ def get_entries_for_date(date: str) -> List[Dict[str, Any]]:
                   protein_g, carbs_g, fat_g, fiber_g, sugar_g,
                   sodium_mg, potassium_mg, cholesterol_mg,
                   saturated_fat_g, trans_fat_g,
-                  calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu
+                  calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu,
+                  confidence_score, confidence_level, source, assumptions
            FROM resolved_entries 
            WHERE logged_date = ?
            ORDER BY id""",

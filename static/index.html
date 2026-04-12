@@ -146,8 +146,75 @@
             background: #cc0000;
         }
 
-        .delete-btn:active {
-            transform: scale(0.95);
+        .food-details {
+            flex: 1;
+        }
+
+        .food-meta {
+            font-size: 0.85rem;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .confidence {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-left: 8px;
+        }
+
+        .confidence.high {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .confidence.medium {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .confidence.low {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .source {
+            font-size: 0.75rem;
+            color: #999;
+            margin-left: 8px;
+        }
+
+        .macros {
+            margin-top: 2px;
+            font-size: 0.8rem;
+        }
+
+        .assumptions-toggle {
+            margin-top: 4px;
+            color: #667eea;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .assumptions-panel {
+            margin-top: 8px;
+            padding: 8px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            font-size: 0.8rem;
+        }
+
+        .assumptions-panel ul {
+            margin: 0;
+            padding-left: 16px;
+        }
+
+        .assumptions-panel li {
+            margin-bottom: 4px;
         }
 
         .meal-badge {
@@ -237,6 +304,36 @@
             background: #f8d7da;
             color: #721c24;
             display: block;
+        }
+
+        .clarification-section {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+        }
+
+        .clarification-section h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .clarification-section p {
+            margin-bottom: 15px;
+            font-weight: 500;
+        }
+
+        .clarification-section input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+
+        .clarification-section input:focus {
+            outline: none;
+            border-color: #667eea;
         }
 
         .tabs {
@@ -337,6 +434,20 @@
                     <button class="button" onclick="logFood()">Log Food</button>
                     <div id="log-status" class="status-message"></div>
                 </div>
+                <div id="clarification-card" class="clarification-section" style="display: none;">
+                    <h3 class="section-title">Need More Details</h3>
+                    <p id="clarification-question"></p>
+                    <input type="text" id="clarification-answer" placeholder="Your answer..." />
+                    <button class="button" onclick="submitClarification()">Continue</button>
+                    <div id="clarify-status" class="status-message"></div>
+                </div>
+                <div id="manual-card" class="clarification-section" style="display: none;">
+                    <h3 class="section-title">Manual Calorie Estimate</h3>
+                    <p id="manual-prompt"></p>
+                    <input type="number" id="manual-calories" placeholder="Estimated calories" min="1" />
+                    <button class="button" onclick="submitManualEstimate()">Save Estimate</button>
+                    <div id="manual-status" class="status-message"></div>
+                </div>
             </div>
         </div>
 
@@ -429,13 +540,18 @@
 
                 const data = await response.json();
                 
-                showStatus(`✓ Logged ${data.foods_logged} item(s) successfully!`, 'success');
-                input.value = '';
-
-                // Auto-switch to today tab after successful log
-                setTimeout(() => {
-                    document.querySelectorAll('.tab')[1].click();
-                }, 1000);
+                if (data.status === 'needs_clarification') {
+                    document.getElementById('manual-card').style.display = 'none';
+                    showClarificationCard(data.pending_entries[0]); // Assume one for now
+                    showStatus('Please answer the question below', 'success');
+                } else {
+                    showStatus(`✓ Logged ${data.foods_logged} item(s) successfully!`, 'success');
+                    input.value = '';
+                    // Auto-switch to today tab after successful log
+                    setTimeout(() => {
+                        document.querySelectorAll('.tab')[1].click();
+                    }, 1000);
+                }
 
             } catch (error) {
                 showStatus(`Error: ${error.message}`, 'error');
@@ -474,15 +590,32 @@
                     const mealClass = entry.meal ? entry.meal.toLowerCase() : '';
                     const mealBadge = entry.meal ? `<span class="meal-badge ${mealClass}">${entry.meal}</span>` : '';
                     const calories = entry.calories ? `<span class="calories">${entry.calories} cal</span>` : '';
+                    const confidence = entry.confidence_level ? `<span class="confidence ${entry.confidence_level}">${entry.confidence_level}</span>` : '';
+                    const source = entry.source ? `<span class="source">${entry.source}</span>` : '';
+                    const macros = entry.protein_g || entry.carbs_g || entry.fat_g ? 
+                        `<div class="macros">P: ${entry.protein_g || 0}g | C: ${entry.carbs_g || 0}g | F: ${entry.fat_g || 0}g</div>` : '';
+                    const assumptions = entry.assumptions && entry.assumptions.length > 0 ? 
+                        `<div class="assumptions-toggle" onclick="toggleAssumptions(this)">Why this estimate? ▼</div>
+                         <div class="assumptions-panel" style="display: none;">
+                             <ul>${entry.assumptions.map(a => `<li>${a}</li>`).join('')}</ul>
+                         </div>` : '';
                     
                     html += `
                         <div class="food-item">
-                            <div class="food-name">
-                                ${entry.food_name}
-                                ${mealBadge}
+                            <div class="food-details">
+                                <div class="food-name">
+                                    ${entry.food_name}
+                                    ${mealBadge}
+                                    ${confidence}
+                                    ${source}
+                                </div>
+                                <div class="food-meta">
+                                    ${calories}
+                                    ${macros}
+                                    ${assumptions}
+                                </div>
                             </div>
                             <div class="food-item-info">
-                                ${calories}
                                 <button class="delete-btn" onclick="deleteEntry(${entry.id})">Delete</button>
                             </div>
                         </div>
@@ -572,16 +705,170 @@
             }
         }
 
-        // Helper: Show status message
-        function showStatus(message, type) {
-            const status = document.getElementById('log-status');
-            status.textContent = message;
-            status.className = `status-message ${type}`;
+        // Toggle assumptions panel
+        function toggleAssumptions(button) {
+            const panel = button.nextElementSibling;
+            if (!panel) {
+                return;
+            }
+
+            if (panel.style.display === 'none' || panel.style.display === '') {
+                panel.style.display = 'block';
+                button.textContent = 'Why this estimate? ▲';
+            } else {
+                panel.style.display = 'none';
+                button.textContent = 'Why this estimate? ▼';
+            }
+        }
+
+        // Show clarification card
+        function showClarificationCard(pending) {
+            const card = document.getElementById('clarification-card');
+            const manualCard = document.getElementById('manual-card');
+            const question = document.getElementById('clarification-question');
+            const answer = document.getElementById('clarification-answer');
+            const status = document.getElementById('clarify-status');
             
-            if (type === 'success') {
+            manualCard.style.display = 'none';
+            question.textContent = pending.question;
+            answer.value = '';
+            status.className = 'status-message';
+            card.style.display = 'block';
+            
+            // Store pending ID
+            card.dataset.pendingId = pending.pending_id;
+        }
+
+        function showManualCard(data) {
+            const clarificationCard = document.getElementById('clarification-card');
+            const manualCard = document.getElementById('manual-card');
+            const prompt = document.getElementById('manual-prompt');
+            const caloriesInput = document.getElementById('manual-calories');
+            const status = document.getElementById('manual-status');
+
+            clarificationCard.style.display = 'none';
+            manualCard.dataset.pendingId = data.pending_id;
+            prompt.textContent = data.manual_prompt || 'Please estimate calories for this item.';
+            if (typeof data.confidence_score_percent === 'number') {
+                prompt.textContent += ` Current confidence: ${data.confidence_score_percent}/100.`;
+            }
+            caloriesInput.value = '';
+            status.className = 'status-message';
+            status.textContent = data.message || '';
+            manualCard.style.display = 'block';
+        }
+
+        // Submit clarification answer
+        async function submitClarification() {
+            const card = document.getElementById('clarification-card');
+            const answer = document.getElementById('clarification-answer');
+            const status = document.getElementById('clarify-status');
+            const button = event.target;
+            const pendingId = card.dataset.pendingId;
+            const text = answer.value.trim();
+
+            if (!text) {
+                status.textContent = 'Please provide an answer';
+                status.className = 'status-message error';
+                return;
+            }
+
+            button.disabled = true;
+            button.textContent = 'Submitting...';
+
+            try {
+                const response = await fetch(`${API_BASE}/clarify`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        pending_id: parseInt(pendingId),
+                        answer: text
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to submit clarification');
+                }
+
+                const data = await response.json();
+
+                if (data.status === 'resolved') {
+                    status.textContent = '✓ Entry logged successfully!';
+                    status.className = 'status-message success';
+                    card.style.display = 'none';
+                    document.getElementById('food-input').value = '';
+                    setTimeout(() => {
+                        document.querySelectorAll('.tab')[1].click();
+                    }, 1000);
+                } else if (data.status === 'needs_clarification') {
+                    status.textContent = data.message || 'More details are needed';
+                    status.className = 'status-message error';
+                    document.getElementById('clarification-question').textContent = data.question;
+                } else if (data.status === 'unresolved') {
+                    showManualCard(data);
+                } else {
+                    status.textContent = 'Unexpected response from server';
+                    status.className = 'status-message error';
+                }
+
+            } catch (error) {
+                status.textContent = `Error: ${error.message}`;
+                status.className = 'status-message error';
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Continue';
+            }
+        }
+
+        async function submitManualEstimate() {
+            const card = document.getElementById('manual-card');
+            const status = document.getElementById('manual-status');
+            const caloriesInput = document.getElementById('manual-calories');
+            const button = event.target;
+            const pendingId = parseInt(card.dataset.pendingId);
+            const calories = parseInt(caloriesInput.value, 10);
+
+            if (!calories || calories <= 0) {
+                status.textContent = 'Please enter a valid calorie estimate';
+                status.className = 'status-message error';
+                return;
+            }
+
+            button.disabled = true;
+            button.textContent = 'Saving...';
+
+            try {
+                const response = await fetch(`${API_BASE}/manual-estimate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        pending_id: pendingId,
+                        calories: calories
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to save manual estimate');
+                }
+
+                const data = await response.json();
+                status.textContent = `✓ Saved manual estimate (${data.calories} cal)`;
+                status.className = 'status-message success';
+                card.style.display = 'none';
+                document.getElementById('food-input').value = '';
                 setTimeout(() => {
-                    status.className = 'status-message';
-                }, 3000);
+                    document.querySelectorAll('.tab')[1].click();
+                }, 1000);
+            } catch (error) {
+                status.textContent = `Error: ${error.message}`;
+                status.className = 'status-message error';
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Save Estimate';
             }
         }
 
