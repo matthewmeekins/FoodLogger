@@ -4,6 +4,7 @@ OpenAI API integration for parsing food entries.
 
 import os
 import json
+import time
 from datetime import date, datetime
 from openai import OpenAI
 from models import ParsedEntry, StructuredIntent
@@ -102,12 +103,67 @@ Rules:
 """
 
 
+OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "20"))
+OPENAI_MAX_RETRIES = max(0, int(os.getenv("OPENAI_MAX_RETRIES", "1")))
+
+LLM_USAGE = {
+  "requests": 0,
+  "retries": 0,
+  "prompt_tokens": 0,
+  "completion_tokens": 0,
+  "total_tokens": 0,
+}
+
+
+def _record_usage(response) -> None:
+  usage = getattr(response, "usage", None)
+  if usage is None:
+    return
+
+  LLM_USAGE["requests"] += 1
+  LLM_USAGE["prompt_tokens"] += int(getattr(usage, "prompt_tokens", 0) or 0)
+  LLM_USAGE["completion_tokens"] += int(getattr(usage, "completion_tokens", 0) or 0)
+  LLM_USAGE["total_tokens"] += int(getattr(usage, "total_tokens", 0) or 0)
+
+
+def _create_client(api_key: str) -> OpenAI:
+  return OpenAI(api_key=api_key, timeout=OPENAI_TIMEOUT_SECONDS, max_retries=0)
+
+
+def _chat_completion_with_retry(*, client: OpenAI, model: str, messages: list[dict], response_format: dict | None = None, temperature: float | None = None, max_tokens: int | None = None):
+  last_error = None
+
+  for attempt in range(OPENAI_MAX_RETRIES + 1):
+    try:
+      kwargs = {
+        "model": model,
+        "messages": messages,
+      }
+      if response_format is not None:
+        kwargs["response_format"] = response_format
+      if temperature is not None:
+        kwargs["temperature"] = temperature
+      if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+
+      response = client.chat.completions.create(**kwargs)
+      _record_usage(response)
+      return response
+    except Exception as exc:
+      last_error = exc
+      if attempt < OPENAI_MAX_RETRIES:
+        LLM_USAGE["retries"] += 1
+        time.sleep(0.25 * (attempt + 1))
+
+  raise last_error
+
+
 def parse_food_entry(input_text: str, api_key: str) -> ParsedEntry:
     """
     Send input text to OpenAI and return validated ParsedEntry.
     Raises exception if API call fails or validation fails.
     """
-    client = OpenAI(api_key=api_key)
+    client = _create_client(api_key)
     
     # Get today's date and current time for context
     today = date.today().isoformat()
@@ -118,13 +174,14 @@ def parse_food_entry(input_text: str, api_key: str) -> ParsedEntry:
     user_message = f"Today's date is {today}.\nCurrent time is {current_time}.\n\nUser input: {input_text}"
     
     # Call OpenAI API
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_message}
-        ],
-        response_format={"type": "json_object"}
+    response = _chat_completion_with_retry(
+      client=client,
+      model="gpt-4o",
+      messages=[
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_message}
+      ],
+      response_format={"type": "json_object"},
     )
     
     # Extract JSON from response
@@ -142,7 +199,7 @@ def parse_structured_intent(input_text: str, api_key: str) -> StructuredIntent:
     Send input text to OpenAI and return validated StructuredIntent.
     Raises exception if API call fails or validation fails.
     """
-    client = OpenAI(api_key=api_key)
+    client = _create_client(api_key)
     
     # Get today's date and current time for context
     today = date.today().isoformat()
@@ -153,13 +210,14 @@ def parse_structured_intent(input_text: str, api_key: str) -> StructuredIntent:
     user_message = f"Today's date is {today}.\nCurrent time is {current_time}.\n\nUser input: {input_text}"
     
     # Call OpenAI API
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": STRUCTURED_SYSTEM_PROMPT},
-            {"role": "user", "content": user_message}
-        ],
-        response_format={"type": "json_object"}
+    response = _chat_completion_with_retry(
+      client=client,
+      model="gpt-4o",
+      messages=[
+        {"role": "system", "content": STRUCTURED_SYSTEM_PROMPT},
+        {"role": "user", "content": user_message}
+      ],
+      response_format={"type": "json_object"},
     )
     
     # Extract JSON from response
@@ -186,7 +244,7 @@ def generate_clarification_question(
 ) -> str:
     """Generate a natural clarification question with OpenAI, fallback to rule-based text."""
     try:
-        client = OpenAI(api_key=api_key)
+        client = _create_client(api_key)
 
         user_prompt = (
             f"Original user input: {original_input}\n"
@@ -200,14 +258,15 @@ def generate_clarification_question(
             "Write the best single clarification question now."
         )
 
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": CLARIFICATION_SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.2,
-            max_tokens=60,
+        response = _chat_completion_with_retry(
+          client=client,
+          model="gpt-4o",
+          messages=[
+            {"role": "system", "content": CLARIFICATION_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+          ],
+          temperature=0.2,
+          max_tokens=60,
         )
 
         content = (response.choices[0].message.content or "").strip()

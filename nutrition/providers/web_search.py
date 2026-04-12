@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import time
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -16,6 +17,12 @@ class WebSearchProvider(NutritionProvider):
 
     def __init__(self, http_client: Optional[HttpClient] = None) -> None:
         self.http_client = http_client or HttpClient()
+        self.openai_timeout_seconds = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "20"))
+        self.openai_max_retries = max(0, int(os.getenv("OPENAI_MAX_RETRIES", "1")))
+
+    def _create_openai_client(self, api_key: str):
+        import openai
+        return openai.OpenAI(api_key=api_key, timeout=self.openai_timeout_seconds, max_retries=0)
 
     def _brand_tokens(self, brand_hint: str) -> List[str]:
         tokens = re.findall(r"[a-z0-9]+", (brand_hint or "").lower())
@@ -96,27 +103,39 @@ class WebSearchProvider(NutritionProvider):
         if not raw_text.strip():
             return {"nutrition_data": []}
 
-        import openai
+        client = self._create_openai_client(api_key)
+        last_error = None
+        response = None
+        for attempt in range(self.openai_max_retries + 1):
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Extract nutrition candidates from the text. "
+                                "Return ONLY JSON object: {\"nutrition_data\": [...]} with fields "
+                                "name, serving, calories, protein_g, carbs_g, fat_g, source_url, citation. "
+                                "Drop entries without explicit numeric macros and source_url."
+                            ),
+                        },
+                        {"role": "user", "content": raw_text},
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0,
+                    max_tokens=600,
+                )
+                break
+            except Exception as exc:
+                last_error = exc
+                if attempt < self.openai_max_retries:
+                    time.sleep(0.25 * (attempt + 1))
 
-        client = openai.OpenAI(api_key=api_key)
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Extract nutrition candidates from the text. "
-                        "Return ONLY JSON object: {\"nutrition_data\": [...]} with fields "
-                        "name, serving, calories, protein_g, carbs_g, fat_g, source_url, citation. "
-                        "Drop entries without explicit numeric macros and source_url."
-                    ),
-                },
-                {"role": "user", "content": raw_text},
-            ],
-            response_format={"type": "json_object"},
-            temperature=0,
-            max_tokens=600,
-        )
+        if response is None:
+            if last_error:
+                raise last_error
+            return {"nutrition_data": []}
 
         content = (response.choices[0].message.content or "").strip()
         try:
@@ -189,8 +208,7 @@ class WebSearchProvider(NutritionProvider):
             return []
 
         try:
-            import openai
-            client = openai.OpenAI(api_key=api_key)
+            client = self._create_openai_client(api_key)
 
             search_query = self._build_search_query(context)
             prompt = (
@@ -201,12 +219,26 @@ class WebSearchProvider(NutritionProvider):
                 f"Food query: {search_query}."
             )
 
-            response = client.responses.create(
-                model="gpt-4.1-mini",
-                input=prompt,
-                tools=[{"type": "web_search_preview"}],
-                temperature=0,
-            )
+            last_error = None
+            response = None
+            for attempt in range(self.openai_max_retries + 1):
+                try:
+                    response = client.responses.create(
+                        model="gpt-4.1-mini",
+                        input=prompt,
+                        tools=[{"type": "web_search_preview"}],
+                        temperature=0,
+                    )
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    if attempt < self.openai_max_retries:
+                        time.sleep(0.25 * (attempt + 1))
+
+            if response is None:
+                if last_error:
+                    raise last_error
+                return []
 
             output_text = self._extract_output_text(response)
             parsed = self._extract_json_block(output_text)

@@ -5,8 +5,10 @@ FastAPI application for food logging system.
 import os
 import json
 import re
+import time
 from datetime import date
 from typing import Dict, Any
+from collections import deque
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -193,6 +195,35 @@ def _build_unresolved_response(pending_id: int, food_name: str, confidence_score
 load_dotenv()
 
 MAX_CLARIFICATION_ROUNDS = max(1, int(os.getenv("MAX_CLARIFICATION_ROUNDS", "3")))
+RATE_LIMIT_PER_MINUTE = max(1, int(os.getenv("RATE_LIMIT_PER_MINUTE", "40")))
+
+_RATE_WINDOW_SECONDS = 60
+_REQUEST_HISTORY: dict[str, deque[float]] = {}
+
+
+def _check_rate_limit(client_id: str) -> bool:
+    now = time.time()
+    window_start = now - _RATE_WINDOW_SECONDS
+
+    history = _REQUEST_HISTORY.get(client_id)
+    if history is None:
+        history = deque()
+        _REQUEST_HISTORY[client_id] = history
+
+    while history and history[0] < window_start:
+        history.popleft()
+
+    if len(history) >= RATE_LIMIT_PER_MINUTE:
+        return False
+
+    history.append(now)
+    return True
+
+
+def _enforce_rate_limit(request: Request) -> None:
+    client_host = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(client_host):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Please retry in a minute.")
 
 # Initialize FastAPI app
 app = FastAPI(title="Food Logging System")
@@ -229,6 +260,8 @@ async def log_food(request: Request) -> Dict[str, Any]:
     
     # Read plain text body
     input_text = (await request.body()).decode("utf-8")
+
+    _enforce_rate_limit(request)
     
     if not input_text.strip():
         raise HTTPException(status_code=400, detail="Empty input")
@@ -412,6 +445,7 @@ async def clarify_entry(request: Request) -> Dict[str, Any]:
     
     # Read JSON body
     data = await request.json()
+    _enforce_rate_limit(request)
     pending_id = data.get("pending_id")
     answer = data.get("answer", "").strip()
     
@@ -664,6 +698,7 @@ def get_today_entries() -> Dict[str, Any]:
 @app.post("/manual-estimate")
 async def manual_estimate(request: Request) -> Dict[str, Any]:
     """Finalize an unresolved pending entry using user-provided manual calories."""
+    _enforce_rate_limit(request)
     data = await request.json()
     pending_id = data.get("pending_id")
     calories = data.get("calories")
@@ -742,3 +777,14 @@ def root():
 def health():
     """Health check endpoint."""
     return {"status": "ok", "service": "Food Logging System"}
+
+
+@app.get("/metrics")
+def metrics() -> Dict[str, Any]:
+    """Lightweight operational metrics for checkpoint 6 cost/latency controls."""
+    active_clients = len(_REQUEST_HISTORY)
+    return {
+        "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE,
+        "tracked_clients": active_clients,
+        "llm_usage": llm.LLM_USAGE,
+    }
