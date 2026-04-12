@@ -8,6 +8,8 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 import json
 
+from nutrition.models import NutritionCandidate
+
 
 DB_PATH = "food_log.db"
 
@@ -97,6 +99,28 @@ def init_db() -> None:
             iron_mg REAL,
             vitamin_c_mg REAL,
             vitamin_d_iu REAL
+        )
+    """)
+
+    # candidates: nutrition lookup results for explainability
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS candidates (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            parsed_id         INTEGER NOT NULL REFERENCES parsed_entries(id),
+            intent_index      INTEGER NOT NULL,
+            name              TEXT NOT NULL,
+            brand             TEXT,
+            serving           TEXT,
+            calories          REAL,
+            protein_g         REAL,
+            carbs_g           REAL,
+            fat_g             REAL,
+            source            TEXT NOT NULL,
+            source_url        TEXT,
+            source_confidence REAL,
+            provider_item_id  TEXT,
+            extra_nutrients   TEXT,
+            score             REAL
         )
     """)
 
@@ -211,6 +235,42 @@ def insert_resolved_entry(
     conn.close()
     
     return resolved_id
+
+
+def insert_candidates(parsed_id: int, intent_index: int, candidates: List[NutritionCandidate], scores: List[float]) -> None:
+    """
+    Insert nutrition candidates for a specific intent.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    for candidate, score in zip(candidates, scores):
+        cursor.execute(
+            """INSERT INTO candidates 
+               (parsed_id, intent_index, name, brand, serving, calories, protein_g, carbs_g, fat_g,
+                source, source_url, source_confidence, provider_item_id, extra_nutrients, score)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                parsed_id,
+                intent_index,
+                candidate.name,
+                candidate.brand,
+                candidate.serving,
+                candidate.calories,
+                candidate.protein_g,
+                candidate.carbs_g,
+                candidate.fat_g,
+                candidate.source,
+                candidate.source_url,
+                candidate.source_confidence,
+                candidate.provider_item_id,
+                json.dumps(candidate.extra_nutrients),
+                score,
+            )
+        )
+    
+    conn.commit()
+    conn.close()
 
 
 def get_entries_for_date(date: str) -> List[Dict[str, Any]]:

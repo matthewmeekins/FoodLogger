@@ -27,6 +27,23 @@ class FoodItem(BaseModel):
     vitamin_d_iu: Optional[float] = None
 
 
+class IntentItem(BaseModel):
+    """Structured intent for a single food item."""
+    brand: Optional[str] = None
+    item: str
+    modifiers: List[str] = []
+    quantity: Optional[str] = None
+    meal: Optional[str] = None
+    unknowns: List[str] = []
+
+
+class StructuredIntent(BaseModel):
+    """Structure returned by LLM for structured parsing."""
+    confidence: str  # "high", "medium", "low"
+    logged_date: str  # YYYY-MM-DD
+    intents: List[IntentItem]
+
+
 class ParsedEntry(BaseModel):
     """Structure returned by LLM after parsing raw input."""
     confidence: str  # "high", "medium", "low"

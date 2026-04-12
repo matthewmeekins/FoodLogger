@@ -13,7 +13,9 @@ from dotenv import load_dotenv
 
 import database
 import llm
-from models import ParsedEntry
+from models import ParsedEntry, StructuredIntent
+from nutrition.service import NutritionService
+from nutrition.models import QueryContext
 
 # Load environment variables
 load_dotenv()
@@ -42,7 +44,7 @@ def startup_event():
 @app.post("/log")
 async def log_food(request: Request) -> Dict[str, Any]:
     """
-    Accept plain text food entry, parse with LLM, and store in database.
+    Accept plain text food entry, parse with LLM, lookup nutrition, and store in database.
     
     Returns a summary of what was logged.
     """
@@ -61,49 +63,81 @@ async def log_food(request: Request) -> Dict[str, Any]:
         # Step 1: Save raw input immediately (never modified)
         raw_id = database.insert_raw_entry(input_text)
         
-        # Step 2: Parse with LLM
-        parsed_entry: ParsedEntry = llm.parse_food_entry(input_text, api_key)
+        # Step 2: Parse structured intent with LLM
+        structured_intent: StructuredIntent = llm.parse_structured_intent(input_text, api_key)
         
-        # Step 3: Save parsed entry
-        parsed_json = parsed_entry.model_dump()
+        # Step 3: Save parsed entry (store as JSON)
+        parsed_json = structured_intent.model_dump()
         parsed_id = database.insert_parsed_entry(
             raw_id=raw_id,
             parsed_json=parsed_json,
-            confidence=parsed_entry.confidence
+            confidence=structured_intent.confidence
         )
         
-        # Step 4: Expand and save individual food items
+        # Step 4: For each intent, lookup nutrition candidates
+        nutrition_service = NutritionService()
         resolved_ids = []
-        for food in parsed_entry.foods:
-            resolved_id = database.insert_resolved_entry(
-                parsed_id=parsed_id,
-                food_name=food.food_name,
-                calories=food.calories,
-                meal=food.meal,
-                logged_date=parsed_entry.logged_date
-            )
-            resolved_ids.append(resolved_id)
+        intent_summaries = []
+        
+        for intent_index, intent in enumerate(structured_intent.intents):
+            # Build query from intent
+            query_parts = [intent.item]
+            if intent.modifiers:
+                query_parts.extend(intent.modifiers)
+            if intent.quantity:
+                query_parts.append(intent.quantity)
+            query = " ".join(query_parts)
+            
+            context = QueryContext(query=query, brand_hint=intent.brand)
+            
+            # Get candidates
+            candidates = nutrition_service.search(context, limit=5)
+            
+            # Calculate scores (service already sorts by score)
+            scores = [nutrition_service._score_candidate(context, c) for c in candidates]
+            
+            # Persist candidates
+            database.insert_candidates(parsed_id, intent_index, candidates, scores)
+            
+            # Pick top candidate if available
+            if candidates:
+                top_candidate = candidates[0]
+                resolved_id = database.insert_resolved_entry(
+                    parsed_id=parsed_id,
+                    food_name=top_candidate.name,
+                    calories=int(top_candidate.calories) if top_candidate.calories else None,
+                    meal=intent.meal,
+                    logged_date=structured_intent.logged_date,
+                    protein_g=top_candidate.protein_g,
+                    carbs_g=top_candidate.carbs_g,
+                    fat_g=top_candidate.fat_g,
+                    # Other nutrients from extra_nutrients if needed, but for now skip
+                )
+                resolved_ids.append(resolved_id)
+            
+            # Collect summary
+            intent_summaries.append({
+                "item": intent.item,
+                "modifiers": intent.modifiers,
+                "quantity": intent.quantity,
+                "meal": intent.meal,
+                "candidates_found": len(candidates)
+            })
         
         # Step 5: Return summary
         return {
             "status": "success",
             "raw_id": raw_id,
             "parsed_id": parsed_id,
-            "confidence": parsed_entry.confidence,
-            "logged_date": parsed_entry.logged_date,
-            "foods_logged": len(parsed_entry.foods),
-            "foods": [
-                {
-                    "food_name": food.food_name,
-                    "calories": food.calories,
-                    "meal": food.meal
-                }
-                for food in parsed_entry.foods
-            ]
+            "confidence": structured_intent.confidence,
+            "logged_date": structured_intent.logged_date,
+            "intents_parsed": len(structured_intent.intents),
+            "foods_logged": len(resolved_ids),
+            "intents": intent_summaries
         }
-    
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing entry: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
 
 
 @app.get("/log/today")
