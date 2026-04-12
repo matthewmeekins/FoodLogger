@@ -31,6 +31,13 @@ RESOLVED_ENTRY_NUTRIENT_COLUMNS = [
     ("vitamin_d_iu", "REAL"),
 ]
 
+RESOLVED_ENTRY_EXTRA_COLUMNS = [
+    ("confidence_score", "REAL"),
+    ("confidence_level", "TEXT"),
+    ("source", "TEXT"),
+    ("assumptions", "TEXT"),  # json
+]
+
 
 def get_connection() -> sqlite3.Connection:
     """Get a database connection with row factory enabled."""
@@ -44,7 +51,7 @@ def _ensure_resolved_entry_columns(cursor: sqlite3.Cursor) -> None:
     cursor.execute("PRAGMA table_info(resolved_entries)")
     existing_columns = {row[1] for row in cursor.fetchall()}
 
-    for column_name, column_type in RESOLVED_ENTRY_NUTRIENT_COLUMNS:
+    for column_name, column_type in RESOLVED_ENTRY_NUTRIENT_COLUMNS + RESOLVED_ENTRY_EXTRA_COLUMNS:
         if column_name not in existing_columns:
             cursor.execute(
                 f"ALTER TABLE resolved_entries ADD COLUMN {column_name} {column_type}"
@@ -124,6 +131,28 @@ def init_db() -> None:
         )
     """)
 
+    # pending_entries: entries waiting for clarification
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS pending_entries (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            parsed_id         INTEGER NOT NULL REFERENCES parsed_entries(id),
+            intent_index      INTEGER NOT NULL,
+            input_text        TEXT NOT NULL,
+            food_name         TEXT NOT NULL,
+            brand             TEXT,
+            modifiers         TEXT,  -- json list
+            quantity          TEXT,
+            meal              TEXT,
+            logged_date       TEXT NOT NULL,
+            confidence_score  REAL,
+            confidence_level  TEXT,
+            source            TEXT,
+            assumptions       TEXT,  -- json list
+            question          TEXT,
+            created_at        TEXT NOT NULL
+        )
+    """)
+
     # Ensure existing databases are upgraded with any missing nutrient columns.
     _ensure_resolved_entry_columns(cursor)
     
@@ -192,6 +221,10 @@ def insert_resolved_entry(
     iron_mg: Optional[float] = None,
     vitamin_c_mg: Optional[float] = None,
     vitamin_d_iu: Optional[float] = None,
+    confidence_score: Optional[float] = None,
+    confidence_level: Optional[str] = None,
+    source: Optional[str] = None,
+    assumptions: Optional[List[str]] = None,
 ) -> int:
     """
     Insert a single resolved food item. Returns the resolved_id.
@@ -205,8 +238,9 @@ def insert_resolved_entry(
             protein_g, carbs_g, fat_g, fiber_g, sugar_g,
             sodium_mg, potassium_mg, cholesterol_mg,
             saturated_fat_g, trans_fat_g,
-            calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu,
+            confidence_score, confidence_level, source, assumptions) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             parsed_id,
             food_name,
@@ -227,6 +261,10 @@ def insert_resolved_entry(
             iron_mg,
             vitamin_c_mg,
             vitamin_d_iu,
+            confidence_score,
+            confidence_level,
+            source,
+            json.dumps(assumptions) if assumptions else None,
         )
     )
     
@@ -235,6 +273,95 @@ def insert_resolved_entry(
     conn.close()
     
     return resolved_id
+
+
+def insert_pending_entry(
+    parsed_id: int,
+    intent_index: int,
+    input_text: str,
+    food_name: str,
+    brand: Optional[str],
+    modifiers: List[str],
+    quantity: Optional[str],
+    meal: Optional[str],
+    logged_date: str,
+    confidence_score: float,
+    confidence_level: str,
+    source: str,
+    assumptions: List[str],
+    question: str,
+) -> int:
+    """
+    Insert a pending entry that needs clarification. Returns the pending_id.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    created_at = datetime.utcnow().isoformat()
+    cursor.execute(
+        """INSERT INTO pending_entries 
+           (parsed_id, intent_index, food_name, brand, modifiers, quantity, meal, logged_date,
+            confidence_score, confidence_level, source, assumptions, question, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            parsed_id,
+            intent_index,
+            food_name,
+            brand,
+            json.dumps(modifiers),
+            quantity,
+            meal,
+            logged_date,
+            confidence_score,
+            confidence_level,
+            source,
+            json.dumps(assumptions),
+            question,
+            created_at,
+        )
+    )
+    
+    pending_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    
+    return pending_id
+
+
+def get_pending_entry(pending_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Get a pending entry by ID.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute(
+        """SELECT id, parsed_id, intent_index, input_text, food_name, brand, modifiers, quantity, meal, logged_date,
+                  confidence_score, confidence_level, source, assumptions, question, created_at
+           FROM pending_entries 
+           WHERE id = ?""",
+        (pending_id,)
+    )
+    
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        return dict(row)
+    return None
+
+
+def delete_pending_entry(pending_id: int) -> None:
+    """
+    Delete a pending entry after resolving it.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("DELETE FROM pending_entries WHERE id = ?", (pending_id,))
+    
+    conn.commit()
+    conn.close()
 
 
 def insert_candidates(parsed_id: int, intent_index: int, candidates: List[NutritionCandidate], scores: List[float]) -> None:

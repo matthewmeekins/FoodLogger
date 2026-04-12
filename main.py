@@ -137,7 +137,7 @@ async def log_food(request: Request) -> Dict[str, Any]:
         # Step 4: For each intent, lookup nutrition candidates
         nutrition_service = NutritionService()
         resolved_ids = []
-        intent_summaries = []
+        pending_summaries = []
         
         for intent_index, intent in enumerate(structured_intent.intents):
             # Build query from intent
@@ -179,51 +179,190 @@ async def log_food(request: Request) -> Dict[str, Any]:
                         if mod.lower() not in name_lower:
                             assumptions.append(f"Assumed {mod} preparation")
                 
-                # Generate question if not high confidence
-                if confidence_level != "high":
+                if confidence_level == "high":
+                    # Save to resolved
+                    resolved_id = database.insert_resolved_entry(
+                        parsed_id=parsed_id,
+                        food_name=top_candidate.name,
+                        calories=int(top_candidate.calories) if top_candidate.calories else None,
+                        meal=intent.meal,
+                        logged_date=structured_intent.logged_date,
+                        protein_g=top_candidate.protein_g,
+                        carbs_g=top_candidate.carbs_g,
+                        fat_g=top_candidate.fat_g,
+                        confidence_score=confidence_score,
+                        confidence_level=confidence_level,
+                        source=top_candidate.source,
+                        assumptions=assumptions,
+                    )
+                    resolved_ids.append(resolved_id)
+                else:
+                    # Generate question and save to pending
                     question = generate_question(intent, top_candidate)
-                
-                # Always save for now (will change in Checkpoint 4)
-                resolved_id = database.insert_resolved_entry(
-                    parsed_id=parsed_id,
-                    food_name=top_candidate.name,
-                    calories=int(top_candidate.calories) if top_candidate.calories else None,
-                    meal=intent.meal,
-                    logged_date=structured_intent.logged_date,
-                    protein_g=top_candidate.protein_g,
-                    carbs_g=top_candidate.carbs_g,
-                    fat_g=top_candidate.fat_g,
-                    # Other nutrients from extra_nutrients if needed, but for now skip
-                )
-                resolved_ids.append(resolved_id)
-            
-            # Collect summary
-            intent_summaries.append({
-                "item": intent.item,
-                "modifiers": intent.modifiers,
-                "quantity": intent.quantity,
-                "meal": intent.meal,
-                "candidates_found": len(candidates),
-                "confidence_score": confidence_score,
-                "confidence_level": confidence_level,
-                "question": question,
-                "assumptions": assumptions
-            })
+                    pending_id = database.insert_pending_entry(
+                        parsed_id=parsed_id,
+                        intent_index=intent_index,
+                        input_text=input_text,
+                        food_name=top_candidate.name,
+                        brand=intent.brand,
+                        modifiers=intent.modifiers,
+                        quantity=intent.quantity,
+                        meal=intent.meal,
+                        logged_date=structured_intent.logged_date,
+                        confidence_score=confidence_score,
+                        confidence_level=confidence_level,
+                        source=top_candidate.source,
+                        assumptions=assumptions,
+                        question=question,
+                    )
+                    pending_summaries.append({
+                        "pending_id": pending_id,
+                        "food_name": top_candidate.name,
+                        "question": question,
+                        "confidence_level": confidence_level,
+                    })
         
-        # Step 5: Return summary
-        return {
-            "status": "success",
-            "raw_id": raw_id,
-            "parsed_id": parsed_id,
-            "confidence": structured_intent.confidence,
-            "logged_date": structured_intent.logged_date,
-            "intents_parsed": len(structured_intent.intents),
-            "foods_logged": len(resolved_ids),
-            "intents": intent_summaries
-        }
+        # Step 5: Return appropriate response
+        if pending_summaries:
+            return {
+                "status": "needs_clarification",
+                "raw_id": raw_id,
+                "parsed_id": parsed_id,
+                "logged_date": structured_intent.logged_date,
+                "resolved_count": len(resolved_ids),
+                "pending_entries": pending_summaries,
+            }
+        else:
+            return {
+                "status": "success",
+                "raw_id": raw_id,
+                "parsed_id": parsed_id,
+                "confidence": structured_intent.confidence,
+                "logged_date": structured_intent.logged_date,
+                "intents_parsed": len(structured_intent.intents),
+                "foods_logged": len(resolved_ids),
+                "intents": [],  # No pending, so empty
+            }
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
+
+
+@app.post("/clarify")
+async def clarify_entry(request: Request) -> Dict[str, Any]:
+    """
+    Submit an answer to a clarification question and re-resolve the entry.
+    
+    Expects: {"pending_id": int, "answer": str}
+    """
+    # Get API key
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured")
+    
+    # Read JSON body
+    data = await request.json()
+    pending_id = data.get("pending_id")
+    answer = data.get("answer", "").strip()
+    
+    if not pending_id or not isinstance(pending_id, int):
+        raise HTTPException(status_code=400, detail="pending_id must be an integer")
+    if not answer:
+        raise HTTPException(status_code=400, detail="answer cannot be empty")
+    
+    try:
+        # Get pending entry
+        pending = database.get_pending_entry(pending_id)
+        if not pending:
+            raise HTTPException(status_code=404, detail="Pending entry not found")
+        
+        # Re-process with answer: append answer to original input
+        updated_input = f"{pending['input_text']} {answer}"
+        
+        # Re-parse structured intent
+        structured_intent: StructuredIntent = llm.parse_structured_intent(updated_input, api_key)
+        
+        # For simplicity, assume single intent and take the first
+        if not structured_intent.intents:
+            raise HTTPException(status_code=400, detail="No intents found in updated input")
+        
+        intent = structured_intent.intents[0]  # Assume one for now
+        
+        # Re-lookup nutrition
+        query_parts = [intent.item]
+        if intent.modifiers:
+            query_parts.extend(intent.modifiers)
+        if intent.quantity:
+            query_parts.append(intent.quantity)
+        query = " ".join(query_parts)
+        
+        context = QueryContext(query=query, brand_hint=intent.brand)
+        nutrition_service = NutritionService()
+        candidates = nutrition_service.search(context, limit=5)
+        
+        if not candidates:
+            raise HTTPException(status_code=400, detail="No nutrition candidates found")
+        
+        top_candidate = candidates[0]
+        confidence_score = evaluate_confidence(intent, top_candidate, query)
+        confidence_level = get_confidence_level(confidence_score)
+        
+        if confidence_level != "high":
+            # Still not confident, return new question
+            question = generate_question(intent, top_candidate)
+            # Update pending entry with new question
+            # For simplicity, just return needs_clarification again
+            return {
+                "status": "needs_clarification",
+                "pending_id": pending_id,
+                "question": question,
+                "message": "Still need more clarification"
+            }
+        
+        # Now confident, save to resolved
+        assumptions = []
+        if not intent.quantity:
+            assumptions.append("Assumed standard serving size")
+        if intent.modifiers:
+            name_lower = (top_candidate.name or "").lower()
+            for mod in intent.modifiers:
+                if mod.lower() not in name_lower:
+                    assumptions.append(f"Assumed {mod} preparation")
+        
+        resolved_id = database.insert_resolved_entry(
+            parsed_id=pending['parsed_id'],
+            food_name=top_candidate.name,
+            calories=int(top_candidate.calories) if top_candidate.calories else None,
+            meal=intent.meal,
+            logged_date=pending['logged_date'],
+            protein_g=top_candidate.protein_g,
+            carbs_g=top_candidate.carbs_g,
+            fat_g=top_candidate.fat_g,
+            confidence_score=confidence_score,
+            confidence_level=confidence_level,
+            source=top_candidate.source,
+            assumptions=assumptions,
+        )
+        
+        # Delete pending
+        database.delete_pending_entry(pending_id)
+        
+        # Persist new candidates
+        scores = [nutrition_service._score_candidate(context, c) for c in candidates]
+        database.insert_candidates(pending['parsed_id'], pending['intent_index'], candidates, scores)
+        
+        return {
+            "status": "resolved",
+            "resolved_id": resolved_id,
+            "food_name": top_candidate.name,
+            "calories": top_candidate.calories,
+            "confidence_level": confidence_level,
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Clarification failed: {str(e)}")
 
 
 @app.get("/log/today")
