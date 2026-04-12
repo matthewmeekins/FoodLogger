@@ -13,9 +13,69 @@ from dotenv import load_dotenv
 
 import database
 import llm
-from models import ParsedEntry, StructuredIntent
+from models import ParsedEntry, StructuredIntent, IntentItem
 from nutrition.service import NutritionService
-from nutrition.models import QueryContext
+from nutrition.models import QueryContext, NutritionCandidate
+
+
+def evaluate_confidence(intent: IntentItem, candidate: NutritionCandidate, query: str) -> float:
+    """Evaluate confidence score for a candidate based on multiple factors."""
+    score = 0.0
+    
+    query_lower = query.lower()
+    name_lower = (candidate.name or "").lower()
+    
+    # Match quality: substring match (more important)
+    if query_lower in name_lower:
+        score += 0.4
+    elif any(word in name_lower for word in query_lower.split()):
+        score += 0.2
+    
+    # Quantity certainty (more important)
+    if intent.quantity:
+        score += 0.3
+    # else: 0
+    
+    # Modifier coverage
+    if intent.modifiers:
+        covered_modifiers = sum(1 for mod in intent.modifiers if mod.lower() in name_lower)
+        score += 0.2 * (covered_modifiers / len(intent.modifiers))
+    else:
+        score += 0.2
+    
+    # Source quality
+    score += 0.1 * candidate.source_confidence
+    
+    return min(score, 1.0)
+
+
+def get_confidence_level(score: float) -> str:
+    """Convert score to confidence level."""
+    if score > 0.7:
+        return "high"
+    elif score > 0.4:
+        return "medium"
+    else:
+        return "low"
+
+
+def generate_question(intent: IntentItem, candidate: NutritionCandidate) -> str:
+    """Generate a targeted follow-up question for clarification."""
+    # Priority: quantity > modifiers > general
+    if not intent.quantity:
+        return f"How much {intent.item} did you eat?"
+    
+    if intent.modifiers:
+        name_lower = (candidate.name or "").lower()
+        uncovered = [mod for mod in intent.modifiers if mod.lower() not in name_lower]
+        if uncovered:
+            return f"How was the {intent.item} prepared? (e.g., {', '.join(uncovered)})"
+    
+    if intent.unknowns:
+        return intent.unknowns[0]  # Use first unknown
+    
+    return f"Can you provide more details about the {intent.item}?"
+
 
 # Load environment variables
 load_dotenv()
@@ -99,9 +159,31 @@ async def log_food(request: Request) -> Dict[str, Any]:
             # Persist candidates
             database.insert_candidates(parsed_id, intent_index, candidates, scores)
             
-            # Pick top candidate if available
+            # Evaluate confidence for top candidate
+            confidence_score = 0.0
+            confidence_level = "low"
+            question = None
+            assumptions = []
+            
             if candidates:
                 top_candidate = candidates[0]
+                confidence_score = evaluate_confidence(intent, top_candidate, query)
+                confidence_level = get_confidence_level(confidence_score)
+                
+                # Generate assumptions
+                if not intent.quantity:
+                    assumptions.append("Assumed standard serving size")
+                if intent.modifiers:
+                    name_lower = (top_candidate.name or "").lower()
+                    for mod in intent.modifiers:
+                        if mod.lower() not in name_lower:
+                            assumptions.append(f"Assumed {mod} preparation")
+                
+                # Generate question if not high confidence
+                if confidence_level != "high":
+                    question = generate_question(intent, top_candidate)
+                
+                # Always save for now (will change in Checkpoint 4)
                 resolved_id = database.insert_resolved_entry(
                     parsed_id=parsed_id,
                     food_name=top_candidate.name,
@@ -121,7 +203,11 @@ async def log_food(request: Request) -> Dict[str, Any]:
                 "modifiers": intent.modifiers,
                 "quantity": intent.quantity,
                 "meal": intent.meal,
-                "candidates_found": len(candidates)
+                "candidates_found": len(candidates),
+                "confidence_score": confidence_score,
+                "confidence_level": confidence_level,
+                "question": question,
+                "assumptions": assumptions
             })
         
         # Step 5: Return summary
