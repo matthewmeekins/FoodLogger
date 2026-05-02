@@ -77,11 +77,15 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 - GET /log/date/{target_date}
 - DELETE /log/{entry_id}
 
-### Trace and ops
+### Health and metrics
 
-- GET /log/{entry_id}/trace
 - GET /health
 - GET /metrics
+
+### Deprecated endpoints (return 410 Gone)
+
+- POST /clarify - All entries now logged directly via OpenAI
+- POST /manual-estimate - All entries now logged directly via OpenAI
 
 ## Quick Curl Examples
 
@@ -123,11 +127,9 @@ Regression tests are included in test_regressions.py.
 Run:
 
 ```bash
-python -m unittest -v test_regressions.py
+.venv/bin/python -m unittest -v test_regressions.py
 ```
 
 Current regression coverage:
 
-- OpenAI nutrition estimation
-- Today ordering (newest first)
-- Date-based summaries
+- Today endpoint ordering (newest first)
