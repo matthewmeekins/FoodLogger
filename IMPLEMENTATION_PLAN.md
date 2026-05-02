@@ -4,7 +4,7 @@
 
 **Goal:** Simplify the system to use OpenAI for direct calorie and macro estimation, eliminating complex nutrition provider lookups and clarification loops.
 
-**Status:** Ready to begin Phase 0
+**Status:** Phase 0 and Phase 1 completed, ready for Phase 2
 
 ---
 
@@ -19,7 +19,7 @@
 
 ## Phase 0: OpenAI-Only Estimation + Original Input Logging
 
-**Status:** 🔄 In Progress
+**Status:** ✅ COMPLETED
 
 **What changes:**
 - Remove complex nutrition provider system (USDA, OpenFoodFacts, WebSearch)
