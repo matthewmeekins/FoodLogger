@@ -18,8 +18,9 @@ Complete guide to create a "Log Food" Siri shortcut for voice-based food logging
 **What it does:**
 1. Activates when you say "Hey Siri, Log Food"
 2. Prompts you to dictate your food entry
-3. Sends the text to your Food Log API
-4. Shows confirmation or clarification questions
+3. Sends the text to your Food Log API for OpenAI estimation
+4. Logs immediately with nutrition breakdown
+5. Shows "Food Logged! ✅" confirmation
 
 ---
 
@@ -59,39 +60,11 @@ Complete guide to create a "Log Food" Siri shortcut for voice-based food logging
 
 ### Step 4: Add Response Handling
 1. Tap the **"+"** button
-2. Search for **"Get Dictionary Value"**
+2. Search for **"Show Notification"**
 3. Tap to add it
 4. Configure:
-   - Get: `status`
-   - From: `Contents of URL`
-
-5. Tap the **"+"** button again
-6. Search for **"If"**
-7. Tap to add it
-8. Configure the condition:
-   - If `Dictionary Value` **equals** `success`
-
-**Inside the "If" block:**
-1. Add action: **"Show Notification"**
-2. Configure:
    - Title: `Food Logged! ✅`
    - Body: Tap variable → Select `Contents of URL`
-
-**Inside the "Otherwise" block:**
-1. Add action: **"Get Dictionary Value"**
-   - Get: `needs_clarification`
-   - From: `Contents of URL`
-2. Add action: **"If"**
-   - If `Dictionary Value` **equals** `true`
-3. Inside this If:
-   - Add action: **"Show Alert"**
-   - Title: `Need More Details`
-   - Message: Tap variable → `Contents of URL`
-   - Show Cancel Button: ON
-4. Otherwise (if not success and not needs_clarification):
-   - Add action: **"Show Alert"**
-   - Title: `Error`
-   - Message: Tap variable → `Contents of URL`
 
 ### Step 5: Name Your Shortcut
 1. Tap the name at the top (probably "New Shortcut")
@@ -141,54 +114,15 @@ While in the shortcut details:
 
 ---
 
-## Advanced Version (Handles Clarifications)
+## Alternative: Simplified Display
 
-If you want to handle clarification questions directly in the shortcut:
+If you want to skip the notification and just see the raw response:
 
-### Enhanced Shortcut with Clarification Loop
-
-This version is more complex but provides a better experience:
-
-1. **Replace the "Otherwise" section** with this flow:
-
-```
-If [status] equals [success]
-  → Show Notification: "Food Logged! ✅"
-Otherwise
-  If [needs_clarification] equals [true]
-    → Get Dictionary Value: pending_entries[0].question
-    → Ask for Input
-        - Question: [pending_entries question]
-        - Default Answer: (empty)
-    → Get Dictionary Value: pending_entries[0].id
-    → Get Contents of URL
-        - URL: http://100.70.11.89:8000/clarify
-        - Method: POST
-        - Headers: Content-Type = application/json
-        - Body: {"pending_id": [pending_id], "answer": "[Provided Input]"}
-    → Show Notification with result
-  Otherwise
-    → Show Alert: "Error" with full response
-```
-
-**Note:** This requires extracting JSON values correctly. The basic version is recommended for simplicity.
-
----
-
-## Simplified Voice-Only Version
-
-If you prefer the absolute simplest version:
-
-### Super Simple Shortcut
-1. **Dictate Text** (as above)
-2. **Get Contents of URL**
-   - URL: `http://100.70.11.89:8000/log`
-   - Method: POST
-   - Headers: `Content-Type: text/plain`
-   - Body: Dictated Text
+1. **Dictate Text** (as configured above)
+2. **Get Contents of URL** (as configured above)
 3. **Show Result**
 
-This shows the raw API response. Less pretty, but works perfectly!
+This shows the API JSON response directly. Less polished, but works fine if you prefer minimal UI.
 
 ---
 
@@ -240,10 +174,10 @@ This shows the raw API response. Less pretty, but works perfectly!
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/log` | POST | Initial food entry (used by shortcut) |
-| `/clarify` | POST | Answer clarification questions (advanced) |
+| `/log` | POST | Log food entry immediately (used by shortcut) |
 | `/log/today` | GET | View today's entries (in browser) |
 | `/health` | GET | Test connection |
+| `/clarify` | POST | **DEPRECATED** (410 Gone) - All entries now log immediately |
 
 ---
 
@@ -251,12 +185,9 @@ This shows the raw API response. Less pretty, but works perfectly!
 
 1. **You speak** → Siri/Dictate converts to text
 2. **Shortcut sends** → Plain text POST to your Mac
-3. **Mac processes** → OpenAI parses the food entry
-4. **Nutrition lookup** → Searches providers for nutrition data
-5. **Two outcomes:**
-   - ✅ **High confidence** → Automatically logged
-   - ❓ **Low confidence** → Asks clarification question
-6. **Response returned** → Shortcut shows notification
+3. **Mac processes** → OpenAI directly estimates calories and macros
+4. **Immediate logging** → Stored with reasoning and full OpenAI response
+5. **Response returned** → Shortcut shows "Food Logged! ✅" notification
 
 ---
 
@@ -285,8 +216,8 @@ After you've created and tested the shortcut:
 
 1. ✅ Use it for a few days to get comfortable
 2. ✅ Check your logs in the web UI regularly
-3. ✅ Consider adding authentication if sharing your Mac
-4. ✅ Adjust clarification threshold if you get too many questions
+3. ✅ Review entries for accuracy (edit via UI if needed)
+4. ✅ Consider adding authentication if sharing your Mac
 
 ---
 
