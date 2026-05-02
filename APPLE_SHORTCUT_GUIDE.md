@@ -9,11 +9,19 @@ Complete guide to create a "Log Food" Siri shortcut for voice-based food logging
 ✅ Tailscale installed on Mac (running)  
 ✅ Tailscale installed on iPhone (connected)  
 ✅ Food Log API running on Mac  
-✅ Your Tailnet DNS: **`deer-regulus.ts.net`**
+✅ Your Machine DNS: **`matthews-mbp.deer-regulus.ts.net`**
 
 ---
 
-## Shortcut Overview
+## DNS Configuration
+
+**Why machine-specific DNS?**
+- `matthews-mbp.deer-regulus.ts.net` explicitly targets your Mac
+- More reliable than tailnet-level DNS
+- Future-proof if you add more machines to your tailnet
+- Guarantees requests always go to the correct machine
+
+---
 
 **What it does:**
 1. Activates when you say "Hey Siri, Log Food"
@@ -44,7 +52,7 @@ Complete guide to create a "Log Food" Siri shortcut for voice-based food logging
 3. Tap to add it
 4. Configure the URL action:
 
-**URL:** `http://deer-regulus.ts.net:8000/log`
+**URL:** `http://matthews-mbp.deer-regulus.ts.net:8000/log`
 
 **Method:** `POST`
 
@@ -108,7 +116,7 @@ While in the shortcut details:
 
 ### Test 3: Check the Database
 1. Open Safari on iPhone
-2. Go to: `http://deer-regulus.ts.net:8000`
+2. Go to: `http://matthews-mbp.deer-regulus.ts.net:8000`
 3. Tap **"Today"** tab
 4. Verify your entries appear
 
@@ -131,11 +139,11 @@ This shows the API JSON response directly. Less polished, but works fine if you 
 ### "Cannot Connect to Server"
 - **Check:** Is Tailscale running on iPhone? (green indicator)
 - **Check:** Is Tailscale running on Mac? Run: `tailscale status`
-- **Check:** Is your Food Log server running? Test: `http://deer-regulus.ts.net:8000/health`
+- **Check:** Is your Food Log server running? Test: `http://matthews-mbp.deer-regulus.ts.net:8000/health`
 
 ### "Request Failed" or Timeout
 - **Check:** Your Mac isn't asleep (must be awake to serve requests)
-- **Check:** Your Tailnet DNS is correct: `deer-regulus.ts.net`
+- **Check:** Your machine DNS is correct: `matthews-mbp.deer-regulus.ts.net`
 - **Try:** Restart Tailscale on iPhone (toggle off/on)
 
 ### Siri Not Recognizing Command
@@ -231,7 +239,7 @@ tailscale ip -4
 
 **On Mac - Check API:**
 ```bash
-curl http://deer-regulus.ts.net:8000/health
+curl http://matthews-mbp.deer-regulus.ts.net:8000/health
 curl http://localhost:8000/log/today
 ```
 
