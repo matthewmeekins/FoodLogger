@@ -9,7 +9,7 @@ Complete guide to create a "Log Food" Siri shortcut for voice-based food logging
 ✅ Tailscale installed on Mac (running)  
 ✅ Tailscale installed on iPhone (connected)  
 ✅ Food Log API running on Mac  
-✅ Your Mac's Tailscale IP: **`100.70.11.89`**
+✅ Your Tailnet DNS: **`deer-regulus.ts.net`**
 
 ---
 
@@ -44,7 +44,7 @@ Complete guide to create a "Log Food" Siri shortcut for voice-based food logging
 3. Tap to add it
 4. Configure the URL action:
 
-**URL:** `http://100.70.11.89:8000/log`
+**URL:** `http://deer-regulus.ts.net:8000/log`
 
 **Method:** `POST`
 
@@ -108,7 +108,7 @@ While in the shortcut details:
 
 ### Test 3: Check the Database
 1. Open Safari on iPhone
-2. Go to: `http://100.70.11.89:8000`
+2. Go to: `http://deer-regulus.ts.net:8000`
 3. Tap **"Today"** tab
 4. Verify your entries appear
 
@@ -131,11 +131,11 @@ This shows the API JSON response directly. Less polished, but works fine if you 
 ### "Cannot Connect to Server"
 - **Check:** Is Tailscale running on iPhone? (green indicator)
 - **Check:** Is Tailscale running on Mac? Run: `tailscale status`
-- **Check:** Is your Food Log server running? Test: `http://100.70.11.89:8000/health`
+- **Check:** Is your Food Log server running? Test: `http://deer-regulus.ts.net:8000/health`
 
 ### "Request Failed" or Timeout
 - **Check:** Your Mac isn't asleep (must be awake to serve requests)
-- **Check:** The IP address is correct (run `tailscale ip -4` on Mac)
+- **Check:** Your Tailnet DNS is correct: `deer-regulus.ts.net`
 - **Try:** Restart Tailscale on iPhone (toggle off/on)
 
 ### Siri Not Recognizing Command
@@ -231,7 +231,7 @@ tailscale ip -4
 
 **On Mac - Check API:**
 ```bash
-curl http://100.70.11.89:8000/health
+curl http://deer-regulus.ts.net:8000/health
 curl http://localhost:8000/log/today
 ```
 
