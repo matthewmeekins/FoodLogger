@@ -155,8 +155,41 @@
         .food-item-info {
             display: flex;
             align-items: center;
+            flex-wrap: wrap;
             gap: 8px;
             margin-left: 10px;
+        }
+
+        .quantity-label {
+            color: #9aa4c2;
+            font-size: 0.8rem;
+            margin-left: 8px;
+        }
+
+        .quantity-controls {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-left: 8px;
+        }
+
+        .qty-btn {
+            background: transparent;
+            color: #aeb6ca;
+            border: 1px solid #333a4d;
+            border-radius: 6px;
+            width: 24px;
+            height: 24px;
+            font-size: 0.9rem;
+            font-weight: 700;
+            cursor: pointer;
+            line-height: 1;
+        }
+
+        .qty-btn:hover {
+            border-color: #5c8dff;
+            color: #b7d8ff;
+            background: rgba(92, 141, 255, 0.08);
         }
 
         .delete-btn {
@@ -930,6 +963,15 @@
             });
         }
 
+        function formatQuantityLabel(entry) {
+            const quantity = Number(entry.quantity_value);
+            if (!Number.isFinite(quantity) || quantity <= 0) {
+                return '';
+            }
+            const unit = (entry.quantity_unit || '').trim();
+            return `Qty: ${formatNutrient(quantity)}${unit ? ` ${unit}` : ''}`;
+        }
+
         function initializeSummaryDateRange() {
             const endInput = document.getElementById('summary-end');
             const startInput = document.getElementById('summary-start');
@@ -1071,6 +1113,10 @@
                     const mealClass = entry.meal ? entry.meal.toLowerCase() : '';
                     const mealBadge = entry.meal ? `<span class="meal-badge ${mealClass}">${entry.meal}</span>` : '';
                     const calories = entry.calories ? `<span class="calories">${entry.calories} cal</span>` : '';
+                    const quantityLabel = formatQuantityLabel(entry);
+                    const quantity = Number(entry.quantity_value) || 1;
+                    const quantityMarkup = quantityLabel ? `<span class="quantity-label">${quantityLabel}</span>` : '';
+                    const quantityControls = `<span class="quantity-controls"><button class="qty-btn" onclick="adjustQuantity(${entry.id}, -1, ${quantity}); event.stopPropagation();">-</button><button class="qty-btn" onclick="adjustQuantity(${entry.id}, 1, ${quantity}); event.stopPropagation();">+</button></span>`;
                     const confidence = entry.confidence_level ? `<span class="confidence ${entry.confidence_level}">${entry.confidence_level}</span>` : '';
                     const source = entry.source ? `<span class="source">${entry.source}</span>` : '';
                     const entryTime = formatEntryTime(entry.created_at);
@@ -1096,12 +1142,14 @@
                                     <div class="food-meta">
                                         ${timeLine}
                                         ${calories}
+                                        ${quantityMarkup}
                                         ${macros}
                                         ${assumptions}
                                     </div>
                                     <div class="trace-toggle" id="trace-toggle-${entry.id}">Trace ▼</div>
                                 </div>
                                 <div class="food-item-info">
+                                    ${quantityControls}
                                     <button class="edit-btn" onclick="openEditModal(${entry.id})">Edit</button>
                                     <button class="delete-btn" onclick="deleteEntry(${entry.id})">Delete</button>
                                 </div>
@@ -1252,13 +1300,20 @@
 
                 const rows = data.entries.map(entry => {
                     const calories = entry.calories ? `${entry.calories} cal` : '—';
+                    const quantityLabel = formatQuantityLabel(entry);
+                    const quantity = Number(entry.quantity_value) || 1;
+                    const quantityMarkup = quantityLabel ? `<div class="quantity-label">${quantityLabel}</div>` : '';
                     const entryTime = formatEntryTime(entry.created_at);
                     const foodLabel = entryTime ? `${entry.food_name} · ${entryTime}` : entry.food_name;
                     return `
                         <div class="detail-item">
-                            <div class="detail-food">${foodLabel}</div>
+                            <div>
+                                <div class="detail-food">${foodLabel}</div>
+                                ${quantityMarkup}
+                            </div>
                             <div class="detail-actions">
                                 <div class="detail-calories">${calories}</div>
+                                <span class="quantity-controls"><button class="qty-btn" onclick="adjustQuantity(${entry.id}, -1, ${quantity}); event.stopPropagation();">-</button><button class="qty-btn" onclick="adjustQuantity(${entry.id}, 1, ${quantity}); event.stopPropagation();">+</button></span>
                                 <button class="edit-btn" onclick="openEditModal(${entry.id})">Edit</button>
                                 <button class="delete-btn" onclick="deleteEntry(${entry.id})">Delete</button>
                             </div>
@@ -1309,6 +1364,29 @@
 
             } catch (error) {
                 alert(`Error: ${error.message}`);
+            }
+        }
+
+        async function adjustQuantity(entryId, delta, currentQuantity) {
+            const nextQuantity = Math.max(1, Math.round((Number(currentQuantity) + delta) * 100) / 100);
+            try {
+                const response = await fetch(`${API_BASE}/log/${entryId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ quantity_value: nextQuantity })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to update quantity');
+                }
+
+                loadTodayEntries();
+                loadSummary();
+                if (selectedSummaryDate) {
+                    loadDateDetails(selectedSummaryDate);
+                }
+            } catch (error) {
+                showStatus(error.message, 'error');
             }
         }
 
@@ -1501,6 +1579,10 @@
                 <input type="number" id="edit-calories" placeholder="e.g., 105">
             </div>
             <div class="form-group">
+                <label for="edit-quantity">Quantity</label>
+                <input type="number" step="0.1" min="1" id="edit-quantity" placeholder="e.g., 2">
+            </div>
+            <div class="form-group">
                 <label for="edit-meal">Meal</label>
                 <select id="edit-meal">
                     <option value="">-- Select Meal --</option>
@@ -1543,6 +1625,7 @@
                     if (entry) {
                         document.getElementById('edit-food-name').value = entry.food_name || '';
                         document.getElementById('edit-calories').value = entry.calories || '';
+                        document.getElementById('edit-quantity').value = entry.quantity_value || 1;
                         document.getElementById('edit-meal').value = entry.meal || '';
                         document.getElementById('edit-protein').value = entry.protein_g || '';
                         document.getElementById('edit-carbs').value = entry.carbs_g || '';
@@ -1563,6 +1646,7 @@
             const updateData = {};
             const foodName = document.getElementById('edit-food-name').value.trim();
             const calories = document.getElementById('edit-calories').value;
+            const quantity = document.getElementById('edit-quantity').value;
             const meal = document.getElementById('edit-meal').value.trim();
             const protein = document.getElementById('edit-protein').value;
             const carbs = document.getElementById('edit-carbs').value;
@@ -1570,6 +1654,7 @@
 
             if (foodName) updateData.food_name = foodName;
             if (calories) updateData.calories = parseInt(calories);
+            if (quantity) updateData.quantity_value = parseFloat(quantity);
             if (meal) updateData.meal = meal;
             if (protein) updateData.protein_g = parseFloat(protein);
             if (carbs) updateData.carbs_g = parseFloat(carbs);

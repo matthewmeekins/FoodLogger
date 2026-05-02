@@ -56,6 +56,44 @@ class FoodLogRegressionTests(unittest.TestCase):
         names = [entry["food_name"] for entry in payload["entries"]]
         self.assertEqual(names[:2], ["SECOND", "FIRST"])
 
+    def test_quantity_update_recalculates_totals(self) -> None:
+        today = date.today().isoformat()
+
+        raw_id = database.insert_raw_entry("two kombuchas")
+        parsed_id = database.insert_parsed_entry(raw_id, {"confidence": "high", "intents": []}, "high")
+        entry_id = database.insert_resolved_entry(
+            parsed_id=parsed_id,
+            food_name="Humm Mango Passionfruit Kombucha",
+            calories=160,
+            quantity_value=2,
+            quantity_unit="bottle",
+            per_unit_calories=80,
+            protein_g=0,
+            carbs_g=36,
+            fat_g=0,
+            per_unit_protein_g=0,
+            per_unit_carbs_g=18,
+            per_unit_fat_g=0,
+            meal=None,
+            logged_date=today,
+            source="manual",
+            confidence_level="manual",
+        )
+
+        updated = database.update_resolved_entry(entry_id, quantity_value=1)
+        self.assertTrue(updated)
+
+        entries = database.get_entries_for_date(today)
+        entry = next(e for e in entries if e["id"] == entry_id)
+        self.assertEqual(entry["quantity_value"], 1)
+        self.assertEqual(entry["calories"], 80)
+        self.assertEqual(entry["carbs_g"], 18)
+
+        edits = database.get_entry_edits(entry_id)
+        edited_fields = {edit["field_name"] for edit in edits}
+        self.assertIn("quantity_value", edited_fields)
+        self.assertIn("calories", edited_fields)
+
 
 if __name__ == "__main__":
     unittest.main()

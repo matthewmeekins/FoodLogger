@@ -75,6 +75,8 @@ def estimate_nutrition(input_text: str, api_key: str, current_time: datetime | N
             {
                 "name": str,
                 "calories": int,
+          "quantity_value": float,
+          "quantity_unit": str | None,
                 "protein_g": float | None,
                 "carbs_g": float | None,
                 "fat_g": float | None,
@@ -101,6 +103,8 @@ Return a JSON object with this structure:
     {
       "name": "string",
       "calories": integer,
+      "quantity_value": float,
+      "quantity_unit": "string" or null,
       "protein_g": float or null,
       "carbs_g": float or null,
       "fat_g": float or null,
@@ -113,11 +117,13 @@ Return a JSON object with this structure:
 
 Critical rules:
 1. ALWAYS provide calorie estimates based on typical portions unless specific quantities given
-2. Estimate macros (protein, carbs, fat in grams) when possible, use null if too uncertain
-3. For compound items (e.g., "pizza with sauce, cheese, pepperoni"), provide component breakdown in reasoning
-4. For restaurant/chain food, use typical menu item calories
-5. Split multiple distinct foods into separate items
-6. In reasoning, show your calculation (e.g., "2oz sauce ~30 cal, naan ~220 cal, cheese ~110 cal, 14 pepperoni ~140 cal = 500 cal total")
+2. Include quantity_value as a positive number for each item. Use 1 if not specified.
+3. Include quantity_unit where obvious (e.g., bottle, can, slice, cup), otherwise null.
+4. Estimate macros (protein, carbs, fat in grams) when possible, use null if too uncertain
+5. For compound items (e.g., "pizza with sauce, cheese, pepperoni"), provide component breakdown in reasoning
+6. For restaurant/chain food, use typical menu item calories
+7. Split multiple distinct foods into separate items
+8. In reasoning, show your calculation (e.g., "2oz sauce ~30 cal, naan ~220 cal, cheese ~110 cal, 14 pepperoni ~140 cal = 500 cal total")
 
 Meal assignment rules:
 - Use user's explicit mention ("for breakfast", "at lunch")
@@ -125,11 +131,11 @@ Meal assignment rules:
 - Use null if completely unclear
 
 Examples:
-1. "I had a banana" → name: "Banana", calories: 105, protein_g: 1.3, carbs_g: 27, fat_g: 0.4, reasoning: "Medium banana, standard USDA values"
+1. "I had a banana" → name: "Banana", calories: 105, quantity_value: 1, quantity_unit: null, protein_g: 1.3, carbs_g: 27, fat_g: 0.4, reasoning: "Medium banana, standard USDA values"
 
-2. "20 Zaxby's wings" → name: "Zaxby's Chicken Wings", calories: 1800, protein_g: 120, carbs_g: 20, fat_g: 140, reasoning: "Restaurant wings typically ~90 cal each, 20 pieces = 1800 cal. High fat from frying, moderate protein, minimal carbs from breading."
+2. "20 Zaxby's wings" → name: "Zaxby's Chicken Wings", calories: 1800, quantity_value: 20, quantity_unit: "wing", protein_g: 120, carbs_g: 20, fat_g: 140, reasoning: "Restaurant wings typically ~90 cal each, 20 pieces = 1800 cal. High fat from frying, moderate protein, minimal carbs from breading."
 
-3. "Small pizza with 2oz sauce, gluten-free naan, mexican cheese, 14 pepperoni" → name: "Homemade Naan Pizza", calories: 500, protein_g: 25, carbs_g: 45, fat_g: 22, reasoning: "2oz pizza sauce (~30 cal, 1g protein, 7g carbs, 0g fat), gluten-free naan (~220 cal, 8g protein, 30g carbs, 6g fat), Mexican cheese blend ~1/4 cup (~110 cal, 8g protein, 1g carbs, 9g fat), 14 pepperoni slices (~140 cal, 8g protein, 1g carbs, 12g fat). Total: 500 cal, 25g protein, 39g carbs, 27g fat"
+3. "Small pizza with 2oz sauce, gluten-free naan, mexican cheese, 14 pepperoni" → name: "Homemade Naan Pizza", calories: 500, quantity_value: 1, quantity_unit: "pizza", protein_g: 25, carbs_g: 45, fat_g: 22, reasoning: "2oz pizza sauce (~30 cal, 1g protein, 7g carbs, 0g fat), gluten-free naan (~220 cal, 8g protein, 30g carbs, 6g fat), Mexican cheese blend ~1/4 cup (~110 cal, 8g protein, 1g carbs, 9g fat), 14 pepperoni slices (~140 cal, 8g protein, 1g carbs, 12g fat). Total: 500 cal, 25g protein, 39g carbs, 27g fat"
 
 Be as accurate as possible. When in doubt, use standard nutritional database values (USDA, restaurant menus, food labels)."""
 
@@ -167,6 +173,21 @@ Estimate the nutrition for all foods mentioned."""
     for item in result["items"]:
         if "name" not in item or "calories" not in item:
             raise ValueError(f"Missing required fields in item: {item}")
+
+        # Normalize quantity fields for downstream scaling/edit operations.
+        quantity_value = item.get("quantity_value", 1)
+        try:
+            quantity_value = float(quantity_value)
+        except (TypeError, ValueError):
+            quantity_value = 1.0
+        if quantity_value <= 0:
+            quantity_value = 1.0
+        item["quantity_value"] = quantity_value
+
+        quantity_unit = item.get("quantity_unit")
+        if quantity_unit is not None:
+            quantity_unit = str(quantity_unit).strip() or None
+        item["quantity_unit"] = quantity_unit
         
         # Ensure calories is an integer
         if not isinstance(item["calories"], int):

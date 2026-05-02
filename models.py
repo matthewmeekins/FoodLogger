@@ -55,6 +55,8 @@ class UpdateEntryRequest(BaseModel):
     """Request to update a specific entry field."""
     food_name: Optional[str] = None
     calories: Optional[int] = None
+    quantity_value: Optional[float] = None
+    quantity_unit: Optional[str] = None
     meal: Optional[str] = None
     logged_date: Optional[str] = None
     protein_g: Optional[float] = None

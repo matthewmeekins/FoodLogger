@@ -37,6 +37,12 @@ RESOLVED_ENTRY_EXTRA_COLUMNS = [
     ("assumptions", "TEXT"),  # json
     ("reasoning", "TEXT"),  # OpenAI's component breakdown
     ("openai_response", "TEXT"),  # Full OpenAI JSON response for audit trail
+    ("quantity_value", "REAL NOT NULL DEFAULT 1.0"),
+    ("quantity_unit", "TEXT"),
+    ("per_unit_calories", "REAL"),
+    ("per_unit_protein_g", "REAL"),
+    ("per_unit_carbs_g", "REAL"),
+    ("per_unit_fat_g", "REAL"),
 ]
 
 
@@ -65,6 +71,43 @@ def _backfill_resolved_entry_created_at(cursor: sqlite3.Cursor) -> None:
         """UPDATE resolved_entries
            SET created_at = COALESCE(created_at, logged_date || 'T12:00:00')
            WHERE created_at IS NULL OR created_at = ''"""
+    )
+
+
+def _backfill_quantity_fields(cursor: sqlite3.Cursor) -> None:
+    """Backfill quantity/per-unit fields for legacy rows."""
+    cursor.execute(
+       """UPDATE resolved_entries
+         SET quantity_value = COALESCE(quantity_value, 1.0)
+         WHERE quantity_value IS NULL OR quantity_value <= 0"""
+    )
+    cursor.execute(
+       """UPDATE resolved_entries
+         SET per_unit_calories = CASE
+             WHEN per_unit_calories IS NULL THEN
+                CASE WHEN quantity_value > 0 THEN CAST(calories AS REAL) / quantity_value
+                    ELSE CAST(calories AS REAL) END
+             ELSE per_unit_calories
+         END,
+         per_unit_protein_g = CASE
+             WHEN per_unit_protein_g IS NULL THEN
+                CASE WHEN quantity_value > 0 THEN protein_g / quantity_value
+                    ELSE protein_g END
+             ELSE per_unit_protein_g
+         END,
+         per_unit_carbs_g = CASE
+             WHEN per_unit_carbs_g IS NULL THEN
+                CASE WHEN quantity_value > 0 THEN carbs_g / quantity_value
+                    ELSE carbs_g END
+             ELSE per_unit_carbs_g
+         END,
+         per_unit_fat_g = CASE
+             WHEN per_unit_fat_g IS NULL THEN
+                CASE WHEN quantity_value > 0 THEN fat_g / quantity_value
+                    ELSE fat_g END
+             ELSE per_unit_fat_g
+         END
+         WHERE calories IS NOT NULL OR protein_g IS NOT NULL OR carbs_g IS NOT NULL OR fat_g IS NOT NULL"""
     )
 
 
@@ -144,6 +187,7 @@ def init_db() -> None:
     _ensure_resolved_entry_columns(cursor)
     _ensure_indexes(cursor)
     _backfill_resolved_entry_created_at(cursor)
+    _backfill_quantity_fields(cursor)
     
     conn.commit()
     conn.close()
@@ -216,6 +260,12 @@ def insert_resolved_entry(
     assumptions: Optional[List[str]] = None,
     reasoning: Optional[str] = None,
     openai_response: Optional[str] = None,
+    quantity_value: float = 1.0,
+    quantity_unit: Optional[str] = None,
+    per_unit_calories: Optional[float] = None,
+    per_unit_protein_g: Optional[float] = None,
+    per_unit_carbs_g: Optional[float] = None,
+    per_unit_fat_g: Optional[float] = None,
 ) -> int:
     """
     Insert a single resolved food item. Returns the resolved_id.
@@ -231,8 +281,9 @@ def insert_resolved_entry(
             sodium_mg, potassium_mg, cholesterol_mg,
             saturated_fat_g, trans_fat_g,
             calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu,
-            confidence_score, confidence_level, source, assumptions, reasoning, openai_response) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            confidence_score, confidence_level, source, assumptions, reasoning, openai_response,
+            quantity_value, quantity_unit, per_unit_calories, per_unit_protein_g, per_unit_carbs_g, per_unit_fat_g) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             parsed_id,
             food_name,
@@ -260,6 +311,12 @@ def insert_resolved_entry(
             json.dumps(assumptions) if assumptions else None,
             reasoning,
             openai_response,
+            quantity_value,
+            quantity_unit,
+            per_unit_calories,
+            per_unit_protein_g,
+            per_unit_carbs_g,
+            per_unit_fat_g,
         )
     )
     
@@ -286,6 +343,8 @@ def update_resolved_entry(
     *,
     food_name: Optional[str] = None,
     calories: Optional[int] = None,
+    quantity_value: Optional[float] = None,
+    quantity_unit: Optional[str] = None,
     meal: Optional[str] = None,
     logged_date: Optional[str] = None,
     protein_g: Optional[float] = None,
@@ -302,7 +361,9 @@ def update_resolved_entry(
     
     # Get current values for audit trail
     cursor.execute(
-        """SELECT food_name, calories, meal, logged_date, protein_g, carbs_g, fat_g, reasoning
+        """SELECT food_name, calories, quantity_value, quantity_unit, meal, logged_date,
+                  protein_g, carbs_g, fat_g, reasoning,
+                  per_unit_calories, per_unit_protein_g, per_unit_carbs_g, per_unit_fat_g
            FROM resolved_entries WHERE id = ?""",
         (entry_id,)
     )
@@ -326,6 +387,90 @@ def update_resolved_entry(
         updates.append("calories = ?")
         values.append(calories)
         _log_edit(cursor, entry_id, "calories", current["calories"], calories)
+        current_quantity = float(current.get("quantity_value") or 1.0)
+        if current_quantity <= 0:
+            current_quantity = 1.0
+        updates.append("per_unit_calories = ?")
+        values.append(float(calories) / current_quantity)
+
+    if quantity_value is not None:
+        new_quantity = float(quantity_value)
+        if new_quantity <= 0:
+            new_quantity = 1.0
+        if new_quantity != float(current.get("quantity_value") or 1.0):
+            updates.append("quantity_value = ?")
+            values.append(new_quantity)
+            _log_edit(cursor, entry_id, "quantity_value", current.get("quantity_value"), new_quantity)
+
+            per_unit_calories = current.get("per_unit_calories")
+            per_unit_protein_g = current.get("per_unit_protein_g")
+            per_unit_carbs_g = current.get("per_unit_carbs_g")
+            per_unit_fat_g = current.get("per_unit_fat_g")
+
+            if per_unit_calories is None and current.get("calories") is not None:
+                old_quantity = float(current.get("quantity_value") or 1.0)
+                if old_quantity <= 0:
+                    old_quantity = 1.0
+                per_unit_calories = float(current["calories"]) / old_quantity
+                updates.append("per_unit_calories = ?")
+                values.append(per_unit_calories)
+
+            if per_unit_protein_g is None and current.get("protein_g") is not None:
+                old_quantity = float(current.get("quantity_value") or 1.0)
+                if old_quantity <= 0:
+                    old_quantity = 1.0
+                per_unit_protein_g = float(current["protein_g"]) / old_quantity
+                updates.append("per_unit_protein_g = ?")
+                values.append(per_unit_protein_g)
+
+            if per_unit_carbs_g is None and current.get("carbs_g") is not None:
+                old_quantity = float(current.get("quantity_value") or 1.0)
+                if old_quantity <= 0:
+                    old_quantity = 1.0
+                per_unit_carbs_g = float(current["carbs_g"]) / old_quantity
+                updates.append("per_unit_carbs_g = ?")
+                values.append(per_unit_carbs_g)
+
+            if per_unit_fat_g is None and current.get("fat_g") is not None:
+                old_quantity = float(current.get("quantity_value") or 1.0)
+                if old_quantity <= 0:
+                    old_quantity = 1.0
+                per_unit_fat_g = float(current["fat_g"]) / old_quantity
+                updates.append("per_unit_fat_g = ?")
+                values.append(per_unit_fat_g)
+
+            if per_unit_calories is not None:
+                recalculated_calories = int(round(float(per_unit_calories) * new_quantity))
+                if recalculated_calories != current.get("calories"):
+                    updates.append("calories = ?")
+                    values.append(recalculated_calories)
+                    _log_edit(cursor, entry_id, "calories", current.get("calories"), recalculated_calories)
+
+            if per_unit_protein_g is not None:
+                recalculated_protein = float(per_unit_protein_g) * new_quantity
+                if recalculated_protein != current.get("protein_g"):
+                    updates.append("protein_g = ?")
+                    values.append(recalculated_protein)
+                    _log_edit(cursor, entry_id, "protein_g", current.get("protein_g"), recalculated_protein)
+
+            if per_unit_carbs_g is not None:
+                recalculated_carbs = float(per_unit_carbs_g) * new_quantity
+                if recalculated_carbs != current.get("carbs_g"):
+                    updates.append("carbs_g = ?")
+                    values.append(recalculated_carbs)
+                    _log_edit(cursor, entry_id, "carbs_g", current.get("carbs_g"), recalculated_carbs)
+
+            if per_unit_fat_g is not None:
+                recalculated_fat = float(per_unit_fat_g) * new_quantity
+                if recalculated_fat != current.get("fat_g"):
+                    updates.append("fat_g = ?")
+                    values.append(recalculated_fat)
+                    _log_edit(cursor, entry_id, "fat_g", current.get("fat_g"), recalculated_fat)
+
+    if quantity_unit is not None and quantity_unit != current.get("quantity_unit"):
+        updates.append("quantity_unit = ?")
+        values.append(quantity_unit)
+        _log_edit(cursor, entry_id, "quantity_unit", current.get("quantity_unit"), quantity_unit)
     
     if meal is not None and meal != current["meal"]:
         updates.append("meal = ?")
@@ -341,16 +486,31 @@ def update_resolved_entry(
         updates.append("protein_g = ?")
         values.append(protein_g)
         _log_edit(cursor, entry_id, "protein_g", current["protein_g"], protein_g)
+        current_quantity = float(current.get("quantity_value") or 1.0)
+        if current_quantity <= 0:
+            current_quantity = 1.0
+        updates.append("per_unit_protein_g = ?")
+        values.append(float(protein_g) / current_quantity)
     
     if carbs_g is not None and carbs_g != current["carbs_g"]:
         updates.append("carbs_g = ?")
         values.append(carbs_g)
         _log_edit(cursor, entry_id, "carbs_g", current["carbs_g"], carbs_g)
+        current_quantity = float(current.get("quantity_value") or 1.0)
+        if current_quantity <= 0:
+            current_quantity = 1.0
+        updates.append("per_unit_carbs_g = ?")
+        values.append(float(carbs_g) / current_quantity)
     
     if fat_g is not None and fat_g != current["fat_g"]:
         updates.append("fat_g = ?")
         values.append(fat_g)
         _log_edit(cursor, entry_id, "fat_g", current["fat_g"], fat_g)
+        current_quantity = float(current.get("quantity_value") or 1.0)
+        if current_quantity <= 0:
+            current_quantity = 1.0
+        updates.append("per_unit_fat_g = ?")
+        values.append(float(fat_g) / current_quantity)
     
     if reasoning is not None and reasoning != current["reasoning"]:
         updates.append("reasoning = ?")
@@ -402,6 +562,7 @@ def get_entries_for_date(date: str) -> List[Dict[str, Any]]:
     
     cursor.execute(
         """SELECT id, food_name, calories, meal, logged_date, created_at,
+                  quantity_value, quantity_unit,
                   protein_g, carbs_g, fat_g, fiber_g, sugar_g,
                   sodium_mg, potassium_mg, cholesterol_mg,
                   saturated_fat_g, trans_fat_g,

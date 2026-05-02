@@ -121,30 +121,53 @@ async def log_food(request: Request) -> Dict[str, Any]:
         openai_response_json = json.dumps(nutrition_result, indent=2)
         
         for item in nutrition_result["items"]:
+            quantity_value = float(item.get("quantity_value") or 1.0)
+            if quantity_value <= 0:
+                quantity_value = 1.0
+            quantity_unit = item.get("quantity_unit")
+
+            calories = item["calories"]
+            protein_g = item.get("protein_g")
+            carbs_g = item.get("carbs_g")
+            fat_g = item.get("fat_g")
+
+            per_unit_calories = float(calories) / quantity_value
+            per_unit_protein_g = (float(protein_g) / quantity_value) if protein_g is not None else None
+            per_unit_carbs_g = (float(carbs_g) / quantity_value) if carbs_g is not None else None
+            per_unit_fat_g = (float(fat_g) / quantity_value) if fat_g is not None else None
+
             resolved_id = database.insert_resolved_entry(
                 parsed_id=parsed_id,
                 food_name=item["name"],
-                calories=item["calories"],
+                calories=calories,
                 meal=item.get("meal"),
                 logged_date=nutrition_result["logged_date"],
-                protein_g=item.get("protein_g"),
-                carbs_g=item.get("carbs_g"),
-                fat_g=item.get("fat_g"),
+                protein_g=protein_g,
+                carbs_g=carbs_g,
+                fat_g=fat_g,
                 confidence_score=1.0,  # OpenAI estimation is trusted
                 confidence_level="high",
                 source="openai",
                 assumptions=[],
                 reasoning=item.get("reasoning", ""),
                 openai_response=openai_response_json,
+                quantity_value=quantity_value,
+                quantity_unit=quantity_unit,
+                per_unit_calories=per_unit_calories,
+                per_unit_protein_g=per_unit_protein_g,
+                per_unit_carbs_g=per_unit_carbs_g,
+                per_unit_fat_g=per_unit_fat_g,
             )
             resolved_ids.append(resolved_id)
             items_summary.append({
                 "id": resolved_id,
                 "name": item["name"],
-                "calories": item["calories"],
-                "protein_g": item.get("protein_g"),
-                "carbs_g": item.get("carbs_g"),
-                "fat_g": item.get("fat_g"),
+                "calories": calories,
+                "quantity_value": quantity_value,
+                "quantity_unit": quantity_unit,
+                "protein_g": protein_g,
+                "carbs_g": carbs_g,
+                "fat_g": fat_g,
                 "meal": item.get("meal"),
             })
         
@@ -257,6 +280,8 @@ def update_entry(entry_id: int, update_data: UpdateEntryRequest = Body(...)) -> 
         entry_id,
         food_name=update_data.food_name,
         calories=update_data.calories,
+        quantity_value=update_data.quantity_value,
+        quantity_unit=update_data.quantity_unit,
         meal=update_data.meal,
         logged_date=update_data.logged_date,
         protein_g=update_data.protein_g,
