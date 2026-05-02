@@ -270,6 +270,20 @@ def delete_entry(entry_id: int) -> Dict[str, Any]:
     return {"status": "success", "message": "Entry deleted"}
 
 
+@app.post("/log/{entry_id}/add-to-today")
+def add_entry_to_today(entry_id: int) -> Dict[str, Any]:
+    """Clone an existing entry into today's log."""
+    new_entry_id = database.add_entry_to_today(entry_id)
+    if new_entry_id is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
+
+    return {
+        "status": "success",
+        "message": "Entry added to today",
+        "entry_id": new_entry_id,
+    }
+
+
 @app.put("/log/{entry_id}")
 def update_entry(entry_id: int, update_data: UpdateEntryRequest = Body(...)) -> Dict[str, Any]:
     """

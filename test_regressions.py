@@ -94,6 +94,34 @@ class FoodLogRegressionTests(unittest.TestCase):
         self.assertIn("quantity_value", edited_fields)
         self.assertIn("calories", edited_fields)
 
+    def test_add_to_today_from_summary_entry(self) -> None:
+        historical_date = "2026-05-01"
+
+        raw_id = database.insert_raw_entry("historical banana")
+        parsed_id = database.insert_parsed_entry(raw_id, {"confidence": "high", "intents": []}, "high")
+        original_entry_id = database.insert_resolved_entry(
+            parsed_id=parsed_id,
+            food_name="BANANA",
+            calories=105,
+            meal="breakfast",
+            logged_date=historical_date,
+            source="manual",
+            confidence_level="manual",
+            quantity_value=1,
+        )
+
+        client = TestClient(main.app)
+        response = client.post(f"/log/{original_entry_id}/add-to-today")
+        self.assertEqual(response.status_code, 200)
+
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertIn("entry_id", payload)
+
+        today = date.today().isoformat()
+        today_entries = database.get_entries_for_date(today)
+        self.assertTrue(any(e["food_name"] == "BANANA" and e["calories"] == 105 for e in today_entries))
+
 
 if __name__ == "__main__":
     unittest.main()

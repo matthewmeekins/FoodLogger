@@ -666,6 +666,84 @@ def delete_resolved_entry(entry_id: int) -> bool:
     return deleted
 
 
+def add_entry_to_today(entry_id: int) -> Optional[int]:
+    """Clone an existing entry onto today's date/time. Returns new entry id or None if not found."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """SELECT parsed_id, food_name, calories, meal,
+                  protein_g, carbs_g, fat_g, fiber_g, sugar_g,
+                  sodium_mg, potassium_mg, cholesterol_mg,
+                  saturated_fat_g, trans_fat_g,
+                  calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu,
+                  confidence_score, confidence_level, source, assumptions, reasoning, openai_response,
+                  quantity_value, quantity_unit, per_unit_calories, per_unit_protein_g, per_unit_carbs_g, per_unit_fat_g
+           FROM resolved_entries
+           WHERE id = ?""",
+        (entry_id,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return None
+
+    today = datetime.now(UTC).date().isoformat()
+    created_at = datetime.now(UTC).isoformat()
+    source = dict(row)
+
+    cursor.execute(
+        """INSERT INTO resolved_entries
+           (parsed_id, food_name, calories, meal, logged_date, created_at,
+            protein_g, carbs_g, fat_g, fiber_g, sugar_g,
+            sodium_mg, potassium_mg, cholesterol_mg,
+            saturated_fat_g, trans_fat_g,
+            calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu,
+            confidence_score, confidence_level, source, assumptions, reasoning, openai_response,
+            quantity_value, quantity_unit, per_unit_calories, per_unit_protein_g, per_unit_carbs_g, per_unit_fat_g)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            source["parsed_id"],
+            source["food_name"],
+            source["calories"],
+            source["meal"],
+            today,
+            created_at,
+            source["protein_g"],
+            source["carbs_g"],
+            source["fat_g"],
+            source["fiber_g"],
+            source["sugar_g"],
+            source["sodium_mg"],
+            source["potassium_mg"],
+            source["cholesterol_mg"],
+            source["saturated_fat_g"],
+            source["trans_fat_g"],
+            source["calcium_mg"],
+            source["iron_mg"],
+            source["vitamin_c_mg"],
+            source["vitamin_d_iu"],
+            source["confidence_score"],
+            source["confidence_level"],
+            source["source"],
+            source["assumptions"],
+            source["reasoning"],
+            source["openai_response"],
+            source["quantity_value"],
+            source["quantity_unit"],
+            source["per_unit_calories"],
+            source["per_unit_protein_g"],
+            source["per_unit_carbs_g"],
+            source["per_unit_fat_g"],
+        ),
+    )
+
+    new_entry_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return new_entry_id
+
+
 def get_recent_entries_by_meal(meal: str, date: str, hours_ago: int = 2) -> List[Dict[str, Any]]:
     """
     Get entries for a specific meal type on a given date.

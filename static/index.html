@@ -225,6 +225,26 @@
             margin-right: 6px;
         }
 
+        .add-today-btn {
+            background: transparent;
+            color: #aeb6ca;
+            border: 1px solid #333a4d;
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: border-color 0.2s, color 0.2s, background 0.2s;
+            white-space: nowrap;
+            margin-right: 6px;
+        }
+
+        .add-today-btn:hover {
+            border-color: #49c98a;
+            color: #baf6d9;
+            background: rgba(73, 201, 138, 0.1);
+        }
+
         .edit-btn:hover {
             border-color: #5c8dff;
             color: #b7d8ff;
@@ -1314,6 +1334,7 @@
                             <div class="detail-actions">
                                 <div class="detail-calories">${calories}</div>
                                 <span class="quantity-controls"><button class="qty-btn" onclick="adjustQuantity(${entry.id}, -1, ${quantity}); event.stopPropagation();">-</button><button class="qty-btn" onclick="adjustQuantity(${entry.id}, 1, ${quantity}); event.stopPropagation();">+</button></span>
+                                <button class="add-today-btn" onclick="addToToday(${entry.id}); event.stopPropagation();">Add to Today</button>
                                 <button class="edit-btn" onclick="openEditModal(${entry.id})">Edit</button>
                                 <button class="delete-btn" onclick="deleteEntry(${entry.id})">Delete</button>
                             </div>
@@ -1385,6 +1406,23 @@
                 if (selectedSummaryDate) {
                     loadDateDetails(selectedSummaryDate);
                 }
+            } catch (error) {
+                showStatus(error.message, 'error');
+            }
+        }
+
+        async function addToToday(entryId) {
+            try {
+                const response = await fetch(`${API_BASE}/log/${entryId}/add-to-today`, {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to add entry to today');
+                }
+
+                loadTodayEntries();
+                showStatus('Entry added to today', 'success');
             } catch (error) {
                 showStatus(error.message, 'error');
             }
