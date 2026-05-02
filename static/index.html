@@ -253,7 +253,8 @@
             font-weight: 600;
         }
 
-        .form-group input {
+        .form-group input,
+        .form-group select {
             width: 100%;
             padding: 10px 12px;
             border: 1px solid #30374a;
@@ -265,10 +266,20 @@
             transition: border-color 0.2s, box-shadow 0.2s;
         }
 
-        .form-group input:focus {
+        .form-group input:focus,
+        .form-group select:focus {
             outline: none;
             border-color: #5c8dff;
             box-shadow: 0 0 0 3px rgba(92, 141, 255, 0.15);
+        }
+
+        .form-group select {
+            cursor: pointer;
+            appearance: none;
+            background-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path fill="%236d7589" d="M6 9L1 4h10z"/></svg>');
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 36px;
         }
 
         .modal-actions {
@@ -1491,7 +1502,13 @@
             </div>
             <div class="form-group">
                 <label for="edit-meal">Meal</label>
-                <input type="text" id="edit-meal" placeholder="e.g., breakfast, lunch, dinner, snack">
+                <select id="edit-meal">
+                    <option value="">-- Select Meal --</option>
+                    <option value="breakfast">Breakfast</option>
+                    <option value="lunch">Lunch</option>
+                    <option value="dinner">Dinner</option>
+                    <option value="snack">Snack</option>
+                </select>
             </div>
             <div class="form-group">
                 <label for="edit-protein">Protein (g)</label>

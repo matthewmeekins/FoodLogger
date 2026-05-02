@@ -87,7 +87,7 @@
 
 ## Phase 1: Edit Old Entries
 
-**Status:** ⏸️ Waiting
+**Status:** ✅ COMPLETED
 
 **What it does:**
 - Edit any logged entry's calories, name, macros, date, meal type

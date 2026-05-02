@@ -9,7 +9,7 @@ This file is a fast restart guide for coding agents and future sessions without 
 - Name: Food Log
 - Stack: FastAPI, SQLite, OpenAI, static HTML/CSS/JS
 - Main branch in use: feature/openai-pivot
-- Current known-good checkpoint: phase-0-openai-estimation
+- Current known-good checkpoint: phase-1-edit-entries
 
 ## Current Functional Baseline
 
@@ -17,6 +17,8 @@ This file is a fast restart guide for coding agents and future sessions without 
 - Component breakdowns with reasoning for complex meals (e.g., "wings, fries, and a coke")
 - Automatic meal type detection (breakfast, lunch, dinner, snack)
 - Immediate logging to resolved_entries (no clarification loops)
+- **NEW: Entry editing** with audit trail (calories, name, macros, meal, date)
+- Edit history tracking in entry_edits table
 - Manual entry deletion if needed
 - Today list sorted newest first
 - Entry timestamps shown in UI
@@ -40,11 +42,13 @@ This file is a fast restart guide for coding agents and future sessions without 
 
 ## Important Files
 
-- main.py: request flow, OpenAI estimation via /log endpoint
+- main.py: request flow, OpenAI estimation via /log endpoint, PUT /log/{id} for editing
 - llm.py: estimate_nutrition() function with OpenAI GPT-4o integration, prompts, retries, usage metrics
 - database.py: schema, migrations, query helpers, indexes
-  - NEW: reasoning and openai_response fields in resolved_entries
-- static/index.html: UI interaction and status messaging
+  - reasoning and openai_response fields in resolved_entries
+  - entry_edits table for audit trail
+  - update_resolved_entry() and get_entry_edits() functions
+- static/index.html: UI interaction, edit modal, meal dropdown selector
 - test_regressions.py: key behavior protections
 - PROJECT_SUMMARY.md: high-level project status
 - README.md: setup and API usage
@@ -57,7 +61,7 @@ This file is a fast restart guide for coding agents and future sessions without 
 - Run regression tests after touching parse or estimation code.
 - Preserve existing rollback tags; add new checkpoint tag before major changes.
 - Avoid broad refactors in the same commit as behavior changes.
-- Follow IMPLEMENTATION_PLAN.md phase sequence (currently completed Phase 0).
+- Follow IMPLEMENTATION_PLAN.md phase sequence (currently completed Phase 0 and Phase 1).
 
 ## Suggested Prompt To Resume Work
 
@@ -70,6 +74,8 @@ Review AGENTS.md and PROJECT_SUMMARY.md. Then run regression tests and report pr
 - List tags:
   - git tag --list
 - Move to known-good checkpoint in detached state:
-  - git checkout phase-0-openai-estimation
+  - git checkout phase-1-edit-entries
 - Create recovery branch from checkpoint:
-  - git checkout -b recovery/phase0 phase-0-openai-estimation
+  - git checkout -b recovery/phase1 phase-1-edit-entries
+- Rollback to Phase 0:
+  - git checkout phase-0-openai-estimation
