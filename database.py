@@ -8,8 +8,6 @@ from datetime import datetime, UTC
 from typing import Optional, List, Dict, Any
 import json
 
-from nutrition.models import NutritionCandidate
-
 
 DB_PATH = "food_log.db"
 
@@ -41,10 +39,6 @@ RESOLVED_ENTRY_EXTRA_COLUMNS = [
     ("openai_response", "TEXT"),  # Full OpenAI JSON response for audit trail
 ]
 
-PENDING_ENTRY_EXTRA_COLUMNS = [
-    ("clarification_rounds", "INTEGER DEFAULT 0"),
-]
-
 
 def get_connection() -> sqlite3.Connection:
     """Get a database connection with row factory enabled."""
@@ -74,31 +68,11 @@ def _backfill_resolved_entry_created_at(cursor: sqlite3.Cursor) -> None:
     )
 
 
-def _ensure_pending_entry_columns(cursor: sqlite3.Cursor) -> None:
-    """Add missing pending-entry columns for existing databases."""
-    cursor.execute("PRAGMA table_info(pending_entries)")
-    existing_columns = {row[1] for row in cursor.fetchall()}
-
-    for column_name, column_type in PENDING_ENTRY_EXTRA_COLUMNS:
-        if column_name not in existing_columns:
-            cursor.execute(
-                f"ALTER TABLE pending_entries ADD COLUMN {column_name} {column_type}"
-            )
-
-
 def _ensure_indexes(cursor: sqlite3.Cursor) -> None:
     """Create indexes for hot query paths."""
     cursor.execute(
         """CREATE INDEX IF NOT EXISTS idx_resolved_entries_logged_date_id
            ON resolved_entries(logged_date, id DESC)"""
-    )
-    cursor.execute(
-        """CREATE INDEX IF NOT EXISTS idx_pending_entries_parsed_id_id
-           ON pending_entries(parsed_id, id DESC)"""
-    )
-    cursor.execute(
-        """CREATE INDEX IF NOT EXISTS idx_candidates_parsed_intent_score
-           ON candidates(parsed_id, intent_index, score DESC)"""
     )
 
 
@@ -154,54 +128,8 @@ def init_db() -> None:
         )
     """)
 
-    # candidates: nutrition lookup results for explainability
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS candidates (
-            id                INTEGER PRIMARY KEY AUTOINCREMENT,
-            parsed_id         INTEGER NOT NULL REFERENCES parsed_entries(id),
-            intent_index      INTEGER NOT NULL,
-            name              TEXT NOT NULL,
-            brand             TEXT,
-            serving           TEXT,
-            calories          REAL,
-            protein_g         REAL,
-            carbs_g           REAL,
-            fat_g             REAL,
-            source            TEXT NOT NULL,
-            source_url        TEXT,
-            source_confidence REAL,
-            provider_item_id  TEXT,
-            extra_nutrients   TEXT,
-            score             REAL
-        )
-    """)
-
-    # pending_entries: entries waiting for clarification
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS pending_entries (
-            id                INTEGER PRIMARY KEY AUTOINCREMENT,
-            parsed_id         INTEGER NOT NULL REFERENCES parsed_entries(id),
-            intent_index      INTEGER NOT NULL,
-            input_text        TEXT NOT NULL,
-            food_name         TEXT NOT NULL,
-            brand             TEXT,
-            modifiers         TEXT,  -- json list
-            quantity          TEXT,
-            meal              TEXT,
-            logged_date       TEXT NOT NULL,
-            confidence_score  REAL,
-            confidence_level  TEXT,
-            source            TEXT,
-            assumptions       TEXT,  -- json list
-            question          TEXT,
-            clarification_rounds INTEGER DEFAULT 0,
-            created_at        TEXT NOT NULL
-        )
-    """)
-
     # Ensure existing databases are upgraded with any missing nutrient columns.
     _ensure_resolved_entry_columns(cursor)
-    _ensure_pending_entry_columns(cursor)
     _ensure_indexes(cursor)
     _backfill_resolved_entry_created_at(cursor)
     
@@ -328,200 +256,6 @@ def insert_resolved_entry(
     conn.close()
     
     return resolved_id
-
-
-def insert_pending_entry(
-    parsed_id: int,
-    intent_index: int,
-    input_text: str,
-    food_name: str,
-    brand: Optional[str],
-    modifiers: List[str],
-    quantity: Optional[str],
-    meal: Optional[str],
-    logged_date: str,
-    confidence_score: float,
-    confidence_level: str,
-    source: Optional[str],
-    assumptions: List[str],
-    question: str,
-) -> int:
-    """
-    Insert a pending entry that needs clarification. Returns the pending_id.
-    """
-    conn = get_connection()
-    cursor = conn.cursor()
-    
-    created_at = datetime.now(UTC).isoformat()
-    cursor.execute(
-        """INSERT INTO pending_entries 
-           (parsed_id, intent_index, input_text, food_name, brand, modifiers, quantity, meal, logged_date,
-            confidence_score, confidence_level, source, assumptions, question, clarification_rounds, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            parsed_id,
-            intent_index,
-            input_text,
-            food_name,
-            brand,
-            json.dumps(modifiers),
-            quantity,
-            meal,
-            logged_date,
-            confidence_score,
-            confidence_level,
-            source,
-            json.dumps(assumptions),
-            question,
-            0,
-            created_at,
-        )
-    )
-    
-    pending_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    
-    return pending_id
-
-
-def get_pending_entry(pending_id: int) -> Optional[Dict[str, Any]]:
-    """
-    Get a pending entry by ID.
-    """
-    conn = get_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute(
-        """SELECT id, parsed_id, intent_index, input_text, food_name, brand, modifiers, quantity, meal, logged_date,
-                  confidence_score, confidence_level, source, assumptions, question, clarification_rounds, created_at
-           FROM pending_entries 
-           WHERE id = ?""",
-        (pending_id,)
-    )
-    
-    row = cursor.fetchone()
-    conn.close()
-    
-    if row:
-        return dict(row)
-    return None
-
-
-def delete_pending_entry(pending_id: int) -> None:
-    """
-    Delete a pending entry after resolving it.
-    """
-    conn = get_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute("DELETE FROM pending_entries WHERE id = ?", (pending_id,))
-    
-    conn.commit()
-    conn.close()
-
-
-def update_pending_entry(
-    pending_id: int,
-    *,
-    food_name: Optional[str] = None,
-    brand: Optional[str] = None,
-    modifiers: Optional[List[str]] = None,
-    quantity: Optional[str] = None,
-    meal: Optional[str] = None,
-    confidence_score: Optional[float] = None,
-    confidence_level: Optional[str] = None,
-    source: Optional[str] = None,
-    assumptions: Optional[List[str]] = None,
-    question: Optional[str] = None,
-    clarification_rounds: Optional[int] = None,
-) -> None:
-    """Update fields on an existing pending entry to improve clarification convergence."""
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    updates: List[str] = []
-    values: List[Any] = []
-
-    if food_name is not None:
-        updates.append("food_name = ?")
-        values.append(food_name)
-    if brand is not None:
-        updates.append("brand = ?")
-        values.append(brand)
-    if modifiers is not None:
-        updates.append("modifiers = ?")
-        values.append(json.dumps(modifiers))
-    if quantity is not None:
-        updates.append("quantity = ?")
-        values.append(quantity)
-    if meal is not None:
-        updates.append("meal = ?")
-        values.append(meal)
-    if confidence_score is not None:
-        updates.append("confidence_score = ?")
-        values.append(confidence_score)
-    if confidence_level is not None:
-        updates.append("confidence_level = ?")
-        values.append(confidence_level)
-    if source is not None:
-        updates.append("source = ?")
-        values.append(source)
-    if assumptions is not None:
-        updates.append("assumptions = ?")
-        values.append(json.dumps(assumptions))
-    if question is not None:
-        updates.append("question = ?")
-        values.append(question)
-    if clarification_rounds is not None:
-        updates.append("clarification_rounds = ?")
-        values.append(clarification_rounds)
-
-    if not updates:
-        conn.close()
-        return
-
-    values.append(pending_id)
-    cursor.execute(f"UPDATE pending_entries SET {', '.join(updates)} WHERE id = ?", values)
-
-    conn.commit()
-    conn.close()
-
-
-def insert_candidates(parsed_id: int, intent_index: int, candidates: List[NutritionCandidate], scores: List[float]) -> None:
-    """
-    Insert nutrition candidates for a specific intent.
-    """
-    conn = get_connection()
-    cursor = conn.cursor()
-    
-    for candidate, score in zip(candidates, scores):
-        cursor.execute(
-            """INSERT INTO candidates 
-               (parsed_id, intent_index, name, brand, serving, calories, protein_g, carbs_g, fat_g,
-                source, source_url, source_confidence, provider_item_id, extra_nutrients, score)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                parsed_id,
-                intent_index,
-                candidate.name,
-                candidate.brand,
-                candidate.serving,
-                candidate.calories,
-                candidate.protein_g,
-                candidate.carbs_g,
-                candidate.fat_g,
-                candidate.source,
-                candidate.source_url,
-                candidate.source_confidence,
-                candidate.provider_item_id,
-                json.dumps(candidate.extra_nutrients),
-                score,
-            )
-        )
-    
-    conn.commit()
-    conn.close()
 
 
 def get_entries_for_date(date: str) -> List[Dict[str, Any]]:
