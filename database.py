@@ -128,6 +128,18 @@ def init_db() -> None:
         )
     """)
 
+    # entry_edits: audit trail for entry modifications
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS entry_edits (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            entry_id    INTEGER NOT NULL REFERENCES resolved_entries(id),
+            field_name  TEXT NOT NULL,
+            old_value   TEXT,
+            new_value   TEXT,
+            edited_at   TEXT NOT NULL
+        )
+    """)
+
     # Ensure existing databases are upgraded with any missing nutrient columns.
     _ensure_resolved_entry_columns(cursor)
     _ensure_indexes(cursor)
@@ -256,6 +268,129 @@ def insert_resolved_entry(
     conn.close()
     
     return resolved_id
+
+
+def _log_edit(cursor: sqlite3.Cursor, entry_id: int, field_name: str, old_value: Any, new_value: Any) -> None:
+    """Log a single field edit to the entry_edits table."""
+    edited_at = datetime.now(UTC).isoformat()
+    cursor.execute(
+        """INSERT INTO entry_edits (entry_id, field_name, old_value, new_value, edited_at)
+           VALUES (?, ?, ?, ?, ?)""",
+        (entry_id, field_name, str(old_value) if old_value is not None else None, 
+         str(new_value) if new_value is not None else None, edited_at)
+    )
+
+
+def update_resolved_entry(
+    entry_id: int,
+    *,
+    food_name: Optional[str] = None,
+    calories: Optional[int] = None,
+    meal: Optional[str] = None,
+    logged_date: Optional[str] = None,
+    protein_g: Optional[float] = None,
+    carbs_g: Optional[float] = None,
+    fat_g: Optional[float] = None,
+    reasoning: Optional[str] = None,
+) -> bool:
+    """
+    Update a resolved entry with edit history tracking.
+    Returns True if updated, False if entry not found.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Get current values for audit trail
+    cursor.execute(
+        """SELECT food_name, calories, meal, logged_date, protein_g, carbs_g, fat_g, reasoning
+           FROM resolved_entries WHERE id = ?""",
+        (entry_id,)
+    )
+    row = cursor.fetchone()
+    
+    if not row:
+        conn.close()
+        return False
+    
+    current = dict(row)
+    updates: List[str] = []
+    values: List[Any] = []
+    
+    # Track changes and build update query
+    if food_name is not None and food_name != current["food_name"]:
+        updates.append("food_name = ?")
+        values.append(food_name)
+        _log_edit(cursor, entry_id, "food_name", current["food_name"], food_name)
+    
+    if calories is not None and calories != current["calories"]:
+        updates.append("calories = ?")
+        values.append(calories)
+        _log_edit(cursor, entry_id, "calories", current["calories"], calories)
+    
+    if meal is not None and meal != current["meal"]:
+        updates.append("meal = ?")
+        values.append(meal)
+        _log_edit(cursor, entry_id, "meal", current["meal"], meal)
+    
+    if logged_date is not None and logged_date != current["logged_date"]:
+        updates.append("logged_date = ?")
+        values.append(logged_date)
+        _log_edit(cursor, entry_id, "logged_date", current["logged_date"], logged_date)
+    
+    if protein_g is not None and protein_g != current["protein_g"]:
+        updates.append("protein_g = ?")
+        values.append(protein_g)
+        _log_edit(cursor, entry_id, "protein_g", current["protein_g"], protein_g)
+    
+    if carbs_g is not None and carbs_g != current["carbs_g"]:
+        updates.append("carbs_g = ?")
+        values.append(carbs_g)
+        _log_edit(cursor, entry_id, "carbs_g", current["carbs_g"], carbs_g)
+    
+    if fat_g is not None and fat_g != current["fat_g"]:
+        updates.append("fat_g = ?")
+        values.append(fat_g)
+        _log_edit(cursor, entry_id, "fat_g", current["fat_g"], fat_g)
+    
+    if reasoning is not None and reasoning != current["reasoning"]:
+        updates.append("reasoning = ?")
+        values.append(reasoning)
+        _log_edit(cursor, entry_id, "reasoning", current["reasoning"], reasoning)
+    
+    # Only update if there are changes
+    if not updates:
+        conn.close()
+        return True
+    
+    values.append(entry_id)
+    cursor.execute(
+        f"UPDATE resolved_entries SET {', '.join(updates)} WHERE id = ?",
+        values
+    )
+    
+    conn.commit()
+    conn.close()
+    
+    return True
+
+
+def get_entry_edits(entry_id: int) -> List[Dict[str, Any]]:
+    """Get edit history for an entry."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute(
+        """SELECT id, field_name, old_value, new_value, edited_at
+           FROM entry_edits
+           WHERE entry_id = ?
+           ORDER BY edited_at DESC""",
+        (entry_id,)
+    )
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    return [dict(row) for row in rows]
 
 
 def get_entries_for_date(date: str) -> List[Dict[str, Any]]:

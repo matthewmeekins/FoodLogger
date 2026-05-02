@@ -10,7 +10,7 @@ from dataclasses import replace
 from datetime import date
 from typing import Dict, Any
 from collections import deque
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 
 import database
 import llm
-from models import ParsedEntry, StructuredIntent, IntentItem
+from models import ParsedEntry, StructuredIntent, IntentItem, UpdateEntryRequest
 from nutrition.service import NutritionService
 from nutrition.models import QueryContext, NutritionCandidate
 
@@ -698,6 +698,38 @@ def delete_entry(entry_id: int) -> Dict[str, Any]:
     return {"status": "success", "message": "Entry deleted"}
 
 
+@app.put("/log/{entry_id}")
+def update_entry(entry_id: int, update_data: UpdateEntryRequest = Body(...)) -> Dict[str, Any]:
+    """
+    Update a food entry with edit history tracking.
+    Only provided fields will be updated.
+    """
+    updated = database.update_resolved_entry(
+        entry_id,
+        food_name=update_data.food_name,
+        calories=update_data.calories,
+        meal=update_data.meal,
+        logged_date=update_data.logged_date,
+        protein_g=update_data.protein_g,
+        carbs_g=update_data.carbs_g,
+        fat_g=update_data.fat_g,
+        reasoning=update_data.reasoning,
+    )
+    
+    if not updated:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    
+    # Get edit history
+    edits = database.get_entry_edits(entry_id)
+    
+    return {
+        "status": "success",
+        "message": "Entry updated",
+        "entry_id": entry_id,
+        "edits_count": len(edits),
+    }
+
+
 @app.get("/log/{entry_id}/trace")
 def get_entry_trace(entry_id: int) -> Dict[str, Any]:
     """Return prompt/response trace context for a resolved entry."""
@@ -725,6 +757,18 @@ def get_entry_trace(entry_id: int) -> Dict[str, Any]:
             "source": trace.get("resolved_source"),
             "confidence_level": trace.get("confidence_level"),
         },
+    }
+
+
+@app.get("/log/{entry_id}/edits")
+def get_entry_edit_history(entry_id: int) -> Dict[str, Any]:
+    """Return edit history for an entry."""
+    edits = database.get_entry_edits(entry_id)
+    
+    return {
+        "entry_id": entry_id,
+        "edits": edits,
+        "edit_count": len(edits),
     }
 
 

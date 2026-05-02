@@ -60,6 +60,15 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
    - Returns: `{"status": "success", "items": [...], "logged_date": "2026-05-01"}`
    - All items are logged immediately - no clarification needed
 
+### Edit entries
+
+- **PUT /log/{entry_id}**
+   - Request body: JSON with optional fields: `food_name`, `calories`, `meal`, `logged_date`, `protein_g`, `carbs_g`, `fat_g`, `reasoning`
+   - Returns: `{"status": "success", "message": "Entry updated", "edits_count": N}`
+   - Tracks all edits in audit trail
+- **GET /log/{entry_id}/edits**
+   - Returns full edit history for an entry
+
 ### Read/list/delete
 
 - GET /log/today

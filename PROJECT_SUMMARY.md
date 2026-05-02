@@ -4,8 +4,8 @@
 
 - Last updated: May 1, 2026
 - Branch: feature/openai-pivot
-- Phase: 0 (OpenAI-only estimation) - COMPLETED
-- Latest checkpoint tag: phase-0-openai-estimation
+- Phase: 1 (Edit entries) - COMPLETED
+- Latest checkpoint tag: phase-1-edit-entries
 
 ## Project Overview
 
@@ -51,19 +51,19 @@ Tables in active use:
 - **raw_entries** - Original user input (audit trail)
 - **parsed_entries** - Minimal compatibility record
 - **resolved_entries** - Logged food items with macros
-  - NEW: `reasoning` field - OpenAI's component breakdown
-  - NEW: `openai_response` field - Complete OpenAI JSON response
+  - `reasoning` field - OpenAI's component breakdown
+  - `openai_response` field - Complete OpenAI JSON response
+- **entry_edits** - Audit trail for entry modifications
+  - Tracks field_name, old_value, new_value, edited_at
 
 Tables deprecated (not deleted, but no longer used):
 
-- pending_entries - Previously for clarification flow
-- candidates - Previously for nutrition provider results
+- None (pending_entries and candidates removed in Phase 0 cleanup)
 
 Recent schema updates:
 
-- Added `reasoning` TEXT field to resolved_entries
-- Added `openai_response` TEXT field to resolved_entries
-- Indexes retained for performance:
+- Added `entry_edits` table for edit history tracking
+- Maintained indexes for performance:
    - resolved_entries(logged_date, id desc)
 
 ## End-to-End Flow
@@ -81,11 +81,13 @@ Recent schema updates:
 Core:
 
 - **POST /log** - Log food via natural language
+- **PUT /log/{id}** - Edit existing entry (calories, name, macros, meal, date)
 - **GET /log/today** - Today's entries
 - **GET /log/summary** - Multi-day summary
 - **GET /log/date/{date}** - Specific date entries
 - **DELETE /log/{id}** - Remove entry
 - **GET /log/{id}/trace** - View audit trail
+- **GET /log/{id}/edits** - View edit history
 
 Deprecated (return 410 Gone):
 

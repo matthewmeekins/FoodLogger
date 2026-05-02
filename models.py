@@ -49,3 +49,15 @@ class ParsedEntry(BaseModel):
     confidence: str  # "high", "medium", "low"
     logged_date: str  # YYYY-MM-DD inferred from context or today
     foods: List[FoodItem]
+
+
+class UpdateEntryRequest(BaseModel):
+    """Request to update a specific entry field."""
+    food_name: Optional[str] = None
+    calories: Optional[int] = None
+    meal: Optional[str] = None
+    logged_date: Optional[str] = None
+    protein_g: Optional[float] = None
+    carbs_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    reasoning: Optional[str] = None
