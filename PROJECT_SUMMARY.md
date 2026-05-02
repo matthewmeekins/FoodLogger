@@ -2,82 +2,101 @@
 
 ## Snapshot
 
-- Last updated: April 28, 2026
-- Branch: feature/nutrition-confidence-loop
-- Commit: 4b2fd0c
-- Latest checkpoint tag: checkpoint-2026-04-12-stability
+- Last updated: May 1, 2026
+- Branch: feature/openai-pivot
+- Phase: 0 (OpenAI-only estimation) - COMPLETED
+- Latest checkpoint tag: phase-0-openai-estimation
 
 ## Project Overview
 
-Food Log is a local-first FastAPI + SQLite app that turns natural language food journals into structured nutrition entries.
+Food Log is a local-first FastAPI + SQLite app that uses OpenAI to estimate calories and macronutrients from natural language food descriptions.
+
+**Major pivot completed (Phase 0):** Simplified from complex nutrition provider lookups to direct OpenAI estimation.
 
 The system now supports:
 
-- Multi-intent structured parsing
-- Component splitting for compound entries
-- Provider-based nutrition lookup with quality gates
-- Confidence-based auto-log versus clarify workflow
-- Manual calorie fallback after max clarify rounds
-- Per-entry trace panel for explainability
+- Direct OpenAI calorie and macro estimation for any food
+- Component breakdowns with reasoning for complex meals
+- Automatic meal type detection (breakfast, lunch, dinner, snack)
+- Full audit trail (original input + complete OpenAI response)
 - Today and Summary tabs with date range filtering and deletions
 - Lightweight operational metrics and rate limiting
+- Remote access via Tailscale from iPhone/Siri Shortcuts
 
 ## Current State
 
 ### Backend
 
 - FastAPI service in main.py
-- OpenAI integration in llm.py
-- Nutrition provider orchestration in nutrition/service.py
+- OpenAI integration in llm.py (GPT-4o for nutrition estimation)
 - SQLite persistence in database.py
+- **REMOVED:** Complex nutrition provider system (USDA, OpenFoodFacts, WebSearch)
+- **REMOVED:** Clarification loop logic
+- **REMOVED:** Confidence scoring and gating
 
 ### Frontend
 
 - Single-page UI in static/index.html
 - Tabs: Log Food, Today, Summary
-- Enter key submit support in input, clarification, and manual estimate flows
+- Enter key submit support in main input
 - Status messages for processing and completion
-- Subtle entry timestamps shown in Today and date-detail lists
-- Macros displayed with readable labels and capped decimals
+- Entry timestamps shown in Today and date-detail lists
+- Macros displayed with readable labels (Protein/Carbs/Fat)
+- OpenAI reasoning/breakdown shown per entry
 
 ### Data Layer
 
 Tables in active use:
 
-- raw_entries
-- parsed_entries
-- resolved_entries
-- pending_entries
-- candidates
+- **raw_entries** - Original user input (audit trail)
+- **parsed_entries** - Minimal compatibility record
+- **resolved_entries** - Logged food items with macros
+  - NEW: `reasoning` field - OpenAI's component breakdown
+  - NEW: `openai_response` field - Complete OpenAI JSON response
 
-Recent schema and performance updates:
+Tables deprecated (not deleted, but no longer used):
 
-- resolved_entries.created_at timestamp support and backfill
-- Indexes for hot query paths:
+- pending_entries - Previously for clarification flow
+- candidates - Previously for nutrition provider results
+
+Recent schema updates:
+
+- Added `reasoning` TEXT field to resolved_entries
+- Added `openai_response` TEXT field to resolved_entries
+- Indexes retained for performance:
    - resolved_entries(logged_date, id desc)
-   - pending_entries(parsed_id, id desc)
-   - candidates(parsed_id, intent_index, score desc)
 
 ## End-to-End Flow
 
-1. User submits free text to POST /log.
-2. App parses structured intents via OpenAI.
-3. Component expansion splits compound entries when needed.
-4. Nutrition candidates are searched and scored.
-5. High-confidence intents are inserted into resolved_entries.
-6. Low-confidence intents are inserted into pending_entries with a targeted clarification question.
-7. User answers via POST /clarify.
-8. If still unresolved after max rounds, user can complete with POST /manual-estimate.
+1. User submits free text to POST /log (via UI, curl, or iPhone Siri Shortcut)
+2. App saves original input to raw_entries
+3. OpenAI estimates calories and macros with component breakdown
+4. All items logged immediately to resolved_entries
+5. User can view in Today/Summary tabs or delete if needed
+
+**Simplified:** No clarification loops, no confidence scoring, no nutrition provider lookups.
 
 ## API Surface
 
 Core:
 
-- POST /log
+- **POST /log** - Log food via natural language
+- **GET /log/today** - Today's entries
+- **GET /log/summary** - Multi-day summary
+- **GET /log/date/{date}** - Specific date entries
+- **DELETE /log/{id}** - Remove entry
+- **GET /log/{id}/trace** - View audit trail
+
+Deprecated (return 410 Gone):
+
 - POST /clarify
 - POST /manual-estimate
 
-Read and management:
+Observability:
+
+- GET /metrics
+- GET /health
+- GET /
 
 - GET /log/today
 - GET /log/summary

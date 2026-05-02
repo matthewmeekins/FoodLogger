@@ -527,7 +527,7 @@ def startup_event():
 @app.post("/log")
 async def log_food(request: Request) -> Dict[str, Any]:
     """
-    Accept plain text food entry, parse with LLM, lookup nutrition, and store in database.
+    Accept plain text food entry, estimate nutrition with OpenAI, and store in database.
     
     Returns a summary of what was logged.
     """
@@ -548,180 +548,66 @@ async def log_food(request: Request) -> Dict[str, Any]:
         # Step 1: Save raw input immediately (never modified)
         raw_id = database.insert_raw_entry(input_text)
         
-        # Step 2: Parse structured intent with LLM
-        structured_intent: StructuredIntent = llm.parse_structured_intent(input_text, api_key)
-        structured_intent = _expand_component_intents(structured_intent)
+        # Step 2: Use OpenAI to directly estimate nutrition
+        from datetime import datetime
+        nutrition_result = llm.estimate_nutrition(input_text, api_key, current_time=datetime.now())
         
-        # Step 3: Save parsed entry (store as JSON)
-        parsed_json = structured_intent.model_dump()
+        # Step 3: Save minimal parsed entry for compatibility
+        parsed_json = {
+            "confidence": "high",  # OpenAI estimates are always used
+            "logged_date": nutrition_result["logged_date"],
+            "intents": []  # No longer using structured intents
+        }
         parsed_id = database.insert_parsed_entry(
             raw_id=raw_id,
             parsed_json=parsed_json,
-            confidence=structured_intent.confidence
+            confidence="high"
         )
         
-        # Step 4: For each intent, lookup nutrition candidates
-        nutrition_service = NutritionService()
+        # Step 4: Insert all estimated items into resolved_entries
         resolved_ids = []
-        pending_summaries = []
+        items_summary = []
         
-        for intent_index, intent in enumerate(structured_intent.intents):
-            # Build query from intent
-            query_parts = [intent.item]
-            if intent.modifiers:
-                query_parts.extend(intent.modifiers)
-            if intent.quantity:
-                query_parts.append(intent.quantity)
-            query = " ".join(query_parts)
-            
-            context = QueryContext(query=query, brand_hint=intent.brand, item_hint=intent.item)
-            
-            # Get candidates
-            candidates = nutrition_service.search(context, limit=5)
-            
-            # Calculate scores (service already sorts by score)
-            scores = [nutrition_service._score_candidate(context, c) for c in candidates]
-            
-            # Persist candidates
-            database.insert_candidates(parsed_id, intent_index, candidates, scores)
-            
-            # Evaluate confidence for top candidate
-            confidence_score = 0.0
-            confidence_level = "low"
-            question = None
-            assumptions = []
-            
-            if candidates:
-                top_candidate = candidates[0]
-                confidence_score = evaluate_confidence(intent, top_candidate, query)
-                confidence_level = get_confidence_level(confidence_score)
-                semantic_overlap = _text_overlap_ratio(intent.item, top_candidate.name)
-
-                # Guard against wrong-food auto-resolution (e.g. broccoli -> unrelated item).
-                if semantic_overlap < 0.25:
-                    confidence_score = min(confidence_score, 0.2)
-                    confidence_level = "low"
-                
-                # Generate assumptions
-                if not intent.quantity:
-                    assumptions.append("Assumed standard serving size")
-                if intent.modifiers:
-                    name_lower = (top_candidate.name or "").lower()
-                    for mod in intent.modifiers:
-                        if mod.lower() not in name_lower:
-                            assumptions.append(f"Assumed {mod} preparation")
-                
-                if confidence_level == "high":
-                    adjusted_candidate, scaled = _apply_quantity_scale(intent, top_candidate)
-                    if scaled:
-                        assumptions.append(f"Scaled nutrients for quantity {intent.quantity}")
-                    # Save to resolved
-                    resolved_id = database.insert_resolved_entry(
-                        parsed_id=parsed_id,
-                        food_name=adjusted_candidate.name,
-                        calories=int(adjusted_candidate.calories) if adjusted_candidate.calories else None,
-                        meal=intent.meal,
-                        logged_date=structured_intent.logged_date,
-                        protein_g=adjusted_candidate.protein_g,
-                        carbs_g=adjusted_candidate.carbs_g,
-                        fat_g=adjusted_candidate.fat_g,
-                        confidence_score=confidence_score,
-                        confidence_level=confidence_level,
-                        source=adjusted_candidate.source,
-                        assumptions=assumptions,
-                    )
-                    resolved_ids.append(resolved_id)
-                else:
-                    # Generate question and save to pending
-                    if semantic_overlap < 0.25:
-                        fallback_question = f"Please confirm the exact food item name for '{intent.item}' and portion size."
-                    else:
-                        fallback_question = generate_question(intent, top_candidate)
-                    question = _safe_clarification_question(
-                        api_key=api_key,
-                        original_input=input_text,
-                        intent=intent,
-                        candidate_name=top_candidate.name,
-                        candidate_source=top_candidate.source,
-                        fallback_question=fallback_question,
-                    )
-                    pending_id = database.insert_pending_entry(
-                        parsed_id=parsed_id,
-                        intent_index=intent_index,
-                        input_text=input_text,
-                        food_name=intent.item,
-                        brand=intent.brand,
-                        modifiers=intent.modifiers,
-                        quantity=intent.quantity,
-                        meal=intent.meal,
-                        logged_date=structured_intent.logged_date,
-                        confidence_score=confidence_score,
-                        confidence_level=confidence_level,
-                        source=top_candidate.source,
-                        assumptions=assumptions,
-                        question=question,
-                    )
-                    pending_summaries.append({
-                        "pending_id": pending_id,
-                        "food_name": intent.item,
-                        "question": question,
-                        "confidence_level": confidence_level,
-                    })
-            else:
-                # No acceptable candidate found; force clarification instead of silent success.
-                fallback_question = f"I could not find a confident match for '{intent.item}'. What portion size did you have?"
-                question = _safe_clarification_question(
-                    api_key=api_key,
-                    original_input=input_text,
-                    intent=intent,
-                    candidate_name=None,
-                    candidate_source=None,
-                    fallback_question=fallback_question,
-                )
-                pending_id = database.insert_pending_entry(
-                    parsed_id=parsed_id,
-                    intent_index=intent_index,
-                    input_text=input_text,
-                    food_name=intent.item,
-                    brand=intent.brand,
-                    modifiers=intent.modifiers,
-                    quantity=intent.quantity,
-                    meal=intent.meal,
-                    logged_date=structured_intent.logged_date,
-                    confidence_score=0.0,
-                    confidence_level="low",
-                    source=None,
-                    assumptions=["Could not find a reliable nutrition source match"],
-                    question=question,
-                )
-                pending_summaries.append({
-                    "pending_id": pending_id,
-                    "food_name": intent.item,
-                    "question": question,
-                    "confidence_level": "low",
-                })
+        # Store the complete OpenAI response as JSON for audit trail
+        openai_response_json = json.dumps(nutrition_result, indent=2)
         
-        # Step 5: Return appropriate response
-        if pending_summaries:
-            return {
-                "status": "needs_clarification",
-                "raw_id": raw_id,
-                "parsed_id": parsed_id,
-                "logged_date": structured_intent.logged_date,
-                "resolved_count": len(resolved_ids),
-                "pending_entries": pending_summaries,
-            }
-        else:
-            return {
-                "status": "success",
-                "raw_id": raw_id,
-                "parsed_id": parsed_id,
-                "confidence": structured_intent.confidence,
-                "logged_date": structured_intent.logged_date,
-                "intents_parsed": len(structured_intent.intents),
-                "foods_logged": len(resolved_ids),
-                "intents": [],  # No pending, so empty
-            }
+        for item in nutrition_result["items"]:
+            resolved_id = database.insert_resolved_entry(
+                parsed_id=parsed_id,
+                food_name=item["name"],
+                calories=item["calories"],
+                meal=item.get("meal"),
+                logged_date=nutrition_result["logged_date"],
+                protein_g=item.get("protein_g"),
+                carbs_g=item.get("carbs_g"),
+                fat_g=item.get("fat_g"),
+                confidence_score=1.0,  # OpenAI estimation is trusted
+                confidence_level="high",
+                source="openai",
+                assumptions=[],
+                reasoning=item.get("reasoning", ""),
+                openai_response=openai_response_json,
+            )
+            resolved_ids.append(resolved_id)
+            items_summary.append({
+                "id": resolved_id,
+                "name": item["name"],
+                "calories": item["calories"],
+                "protein_g": item.get("protein_g"),
+                "carbs_g": item.get("carbs_g"),
+                "fat_g": item.get("fat_g"),
+                "meal": item.get("meal"),
+            })
+        
+        # Step 5: Return success response
+        return {
+            "status": "success",
+            "raw_id": raw_id,
+            "parsed_id": parsed_id,
+            "logged_date": nutrition_result["logged_date"],
+            "items_logged": len(resolved_ids),
+            "items": items_summary,
+        }
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
@@ -729,244 +615,11 @@ async def log_food(request: Request) -> Dict[str, Any]:
 
 @app.post("/clarify")
 async def clarify_entry(request: Request) -> Dict[str, Any]:
-    """
-    Submit an answer to a clarification question and re-resolve the entry.
-    
-    Expects: {"pending_id": int, "answer": str}
-    """
-    # Get API key
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured")
-    
-    # Read JSON body
-    data = await request.json()
-    _enforce_rate_limit(request)
-    pending_id = data.get("pending_id")
-    answer = data.get("answer", "").strip()
-    
-    if not pending_id or not isinstance(pending_id, int):
-        raise HTTPException(status_code=400, detail="pending_id must be an integer")
-    if not answer:
-        raise HTTPException(status_code=400, detail="answer cannot be empty")
-    
-    try:
-        # Get pending entry
-        pending = database.get_pending_entry(pending_id)
-        if not pending:
-            raise HTTPException(status_code=404, detail="Pending entry not found")
-
-        current_rounds = int(pending.get("clarification_rounds") or 0)
-        next_round = current_rounds + 1
-        database.update_pending_entry(pending_id, clarification_rounds=next_round)
-        
-        # Re-process with a targeted context for this pending intent only.
-        context_parts = [pending.get("brand") or "", pending.get("food_name") or ""]
-        context_parts.extend(_safe_json_list(pending.get("modifiers")))
-        if pending.get("quantity"):
-            context_parts.append(str(pending.get("quantity")))
-        base_input = " ".join([p for p in context_parts if p]).strip()
-        if not base_input:
-            base_input = "food item"
-
-        updated_input = f"{base_input}. Clarification: {answer}".strip()
-
-        # Re-parse structured intent and select the specific pending intent by index.
-        intent: IntentItem
-        try:
-            structured_intent: StructuredIntent = llm.parse_structured_intent(updated_input, api_key)
-            structured_intent = _expand_component_intents(structured_intent)
-            selected = _select_intent_for_pending(structured_intent, pending)
-            if not selected or not selected.item:
-                raise ValueError("No valid targeted intent returned from parser")
-            if not _intent_matches_pending(selected, pending):
-                raise ValueError("Targeted intent drifted from pending item")
-            intent = selected
-        except Exception:
-            fallback_item = (pending.get("food_name") or "food item").strip()
-            intent = IntentItem(
-                brand=pending.get("brand"),
-                item=fallback_item,
-                modifiers=_safe_json_list(pending.get("modifiers")),
-                quantity=pending.get("quantity"),
-                meal=pending.get("meal"),
-                unknowns=[],
-            )
-
-        # Convergence enrichment: preserve known pending context and fill missing fields from answer.
-        if not intent.brand and pending.get("brand"):
-            intent.brand = pending.get("brand")
-        if (not intent.quantity) and pending.get("quantity"):
-            intent.quantity = pending.get("quantity")
-        if not intent.quantity:
-            extracted_quantity = _extract_quantity_from_text(answer)
-            if extracted_quantity:
-                intent.quantity = extracted_quantity
-
-        merged_modifiers = _merge_modifiers(_safe_json_list(pending.get("modifiers")), answer)
-        if intent.modifiers:
-            merged_modifiers = _merge_modifiers(merged_modifiers, ", ".join(intent.modifiers))
-        intent.modifiers = merged_modifiers
-        if not intent.meal and pending.get("meal"):
-            intent.meal = pending.get("meal")
-
-        # Persist enriched pending context for subsequent clarification turns.
-        database.update_pending_entry(
-            pending_id,
-            food_name=intent.item,
-            brand=intent.brand,
-            modifiers=intent.modifiers,
-            quantity=intent.quantity,
-            meal=intent.meal,
-        )
-        
-        # Re-lookup nutrition
-        query_parts = [intent.item]
-        if intent.modifiers:
-            query_parts.extend(intent.modifiers)
-        if intent.quantity:
-            query_parts.append(intent.quantity)
-        query = " ".join(query_parts)
-        
-        context = QueryContext(query=query, brand_hint=intent.brand, item_hint=intent.item)
-        nutrition_service = NutritionService()
-        candidates = nutrition_service.search(context, limit=5)
-        
-        if not candidates:
-            fallback_question = (
-                f"What exact menu item name and portion size should be used for {intent.item}?"
-                if (intent.brand or "") else f"What exact portion size did you consume for {intent.item}?"
-            )
-            question = _safe_clarification_question(
-                api_key=api_key,
-                original_input=updated_input,
-                intent=intent,
-                candidate_name=None,
-                candidate_source=None,
-                fallback_question=fallback_question,
-            )
-            database.update_pending_entry(
-                pending_id,
-                question=question,
-                confidence_score=0.0,
-                confidence_level="low",
-                source=None,
-            )
-            if next_round >= MAX_CLARIFICATION_ROUNDS:
-                return _build_unresolved_response(pending_id, intent.item, 0.0)
-            return {
-                "status": "needs_clarification",
-                "pending_id": pending_id,
-                "question": question,
-                "message": "Still need more clarification"
-            }
-        
-        top_candidate = candidates[0]
-        semantic_overlap = _text_overlap_ratio(intent.item, top_candidate.name)
-        if semantic_overlap < 0.25:
-            fallback_question = f"Please confirm the exact item name for {intent.item} and provide the serving amount."
-            question = _safe_clarification_question(
-                api_key=api_key,
-                original_input=updated_input,
-                intent=intent,
-                candidate_name=top_candidate.name,
-                candidate_source=top_candidate.source,
-                fallback_question=fallback_question,
-            )
-            database.update_pending_entry(
-                pending_id,
-                question=question,
-                confidence_score=0.0,
-                confidence_level="low",
-                source=None,
-            )
-            if next_round >= MAX_CLARIFICATION_ROUNDS:
-                return _build_unresolved_response(pending_id, intent.item, 0.0)
-            return {
-                "status": "needs_clarification",
-                "pending_id": pending_id,
-                "question": question,
-                "message": "Still need more clarification"
-            }
-
-        confidence_score = evaluate_confidence(intent, top_candidate, query)
-        confidence_level = get_confidence_level(confidence_score)
-        
-        if confidence_level != "high":
-            # Still not confident, return new question
-            fallback_question = generate_question(intent, top_candidate)
-            question = _safe_clarification_question(
-                api_key=api_key,
-                original_input=updated_input,
-                intent=intent,
-                candidate_name=top_candidate.name,
-                candidate_source=top_candidate.source,
-                fallback_question=fallback_question,
-            )
-            database.update_pending_entry(
-                pending_id,
-                question=question,
-                confidence_score=confidence_score,
-                confidence_level=confidence_level,
-                source=top_candidate.source,
-            )
-            if next_round >= MAX_CLARIFICATION_ROUNDS:
-                return _build_unresolved_response(pending_id, intent.item, confidence_score)
-            return {
-                "status": "needs_clarification",
-                "pending_id": pending_id,
-                "question": question,
-                "message": "Still need more clarification"
-            }
-        
-        # Now confident, save to resolved
-        assumptions = []
-        if not intent.quantity:
-            assumptions.append("Assumed standard serving size")
-        if intent.modifiers:
-            name_lower = (top_candidate.name or "").lower()
-            for mod in intent.modifiers:
-                if mod.lower() not in name_lower:
-                    assumptions.append(f"Assumed {mod} preparation")
-        
-        adjusted_candidate, scaled = _apply_quantity_scale(intent, top_candidate)
-        if scaled:
-            assumptions.append(f"Scaled nutrients for quantity {intent.quantity}")
-
-        resolved_id = database.insert_resolved_entry(
-            parsed_id=pending['parsed_id'],
-            food_name=adjusted_candidate.name,
-            calories=int(adjusted_candidate.calories) if adjusted_candidate.calories else None,
-            meal=intent.meal,
-            logged_date=pending['logged_date'],
-            protein_g=adjusted_candidate.protein_g,
-            carbs_g=adjusted_candidate.carbs_g,
-            fat_g=adjusted_candidate.fat_g,
-            confidence_score=confidence_score,
-            confidence_level=confidence_level,
-            source=adjusted_candidate.source,
-            assumptions=assumptions,
-        )
-        
-        # Delete pending
-        database.delete_pending_entry(pending_id)
-        
-        # Persist new candidates
-        scores = [nutrition_service._score_candidate(context, c) for c in candidates]
-        database.insert_candidates(pending['parsed_id'], pending['intent_index'], candidates, scores)
-        
-        return {
-            "status": "resolved",
-            "resolved_id": resolved_id,
-            "food_name": adjusted_candidate.name,
-            "calories": adjusted_candidate.calories,
-            "confidence_level": confidence_level,
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Clarification failed: {str(e)}")
+    """DEPRECATED: Clarification flow removed in Phase 0 (OpenAI-only estimation)."""
+    raise HTTPException(
+        status_code=410,
+        detail="Clarification endpoint deprecated. All entries are now logged directly via OpenAI estimation."
+    )
 
 
 @app.get("/log/today")
@@ -989,48 +642,11 @@ def get_today_entries() -> Dict[str, Any]:
 
 @app.post("/manual-estimate")
 async def manual_estimate(request: Request) -> Dict[str, Any]:
-    """Finalize an unresolved pending entry using user-provided manual calories."""
-    _enforce_rate_limit(request)
-    data = await request.json()
-    pending_id = data.get("pending_id")
-    calories = data.get("calories")
-
-    if not pending_id or not isinstance(pending_id, int):
-        raise HTTPException(status_code=400, detail="pending_id must be an integer")
-
-    try:
-        calories_value = int(calories)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="calories must be a number")
-
-    if calories_value <= 0:
-        raise HTTPException(status_code=400, detail="calories must be greater than 0")
-
-    pending = database.get_pending_entry(pending_id)
-    if not pending:
-        raise HTTPException(status_code=404, detail="Pending entry not found")
-
-    resolved_id = database.insert_resolved_entry(
-        parsed_id=pending["parsed_id"],
-        food_name=pending.get("food_name") or "manual entry",
-        calories=calories_value,
-        meal=pending.get("meal"),
-        logged_date=pending["logged_date"],
-        confidence_score=0.0,
-        confidence_level="manual",
-        source="manual",
-        assumptions=["Calories manually estimated by user after unresolved clarification"],
+    """DEPRECATED: Manual estimate endpoint removed in Phase 0 (OpenAI-only estimation)."""
+    raise HTTPException(
+        status_code=410,
+        detail="Manual estimate endpoint deprecated. All entries are now logged directly via OpenAI estimation."
     )
-
-    database.delete_pending_entry(pending_id)
-
-    return {
-        "status": "resolved_manual",
-        "resolved_id": resolved_id,
-        "food_name": pending.get("food_name"),
-        "calories": calories_value,
-        "message": "Manual calorie estimate saved.",
-    }
 
 
 @app.get("/log/summary")

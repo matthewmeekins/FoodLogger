@@ -8,20 +8,22 @@ This file is a fast restart guide for coding agents and future sessions without 
 
 - Name: Food Log
 - Stack: FastAPI, SQLite, OpenAI, static HTML/CSS/JS
-- Main branch in use: feature/nutrition-confidence-loop
-- Current known-good checkpoint: checkpoint-2026-04-12-stability
+- Main branch in use: feature/openai-pivot
+- Current known-good checkpoint: phase-0-openai-estimation
 
 ## Current Functional Baseline
 
-- Natural-language food logging with structured intent parsing
-- Component splitting for compound entries
-- Provider-based nutrition lookup with confidence gating
-- Clarification loop for low-confidence intents
-- Manual calorie fallback for unresolved items
+- Natural-language food logging with direct OpenAI calorie estimation
+- Component breakdowns with reasoning for complex meals (e.g., "wings, fries, and a coke")
+- Automatic meal type detection (breakfast, lunch, dinner, snack)
+- Immediate logging to resolved_entries (no clarification loops)
+- Manual entry deletion if needed
 - Today list sorted newest first
 - Entry timestamps shown in UI
-- Per-entry trace endpoint and trace panel in UI
+- Per-entry trace endpoint showing original input and OpenAI response
 - Regression tests in test_regressions.py
+- Remote access via Tailscale
+- iPhone/Siri voice input via Apple Shortcuts
 
 ## First 10 Minutes Checklist
 
@@ -38,21 +40,24 @@ This file is a fast restart guide for coding agents and future sessions without 
 
 ## Important Files
 
-- main.py: request flow, confidence logic, clarify and manual flows, endpoints
-- llm.py: prompts, retries, usage metrics
+- main.py: request flow, OpenAI estimation via /log endpoint
+- llm.py: estimate_nutrition() function with OpenAI GPT-4o integration, prompts, retries, usage metrics
 - database.py: schema, migrations, query helpers, indexes
-- nutrition/service.py: provider ordering, gates, scoring
+  - NEW: reasoning and openai_response fields in resolved_entries
 - static/index.html: UI interaction and status messaging
 - test_regressions.py: key behavior protections
 - PROJECT_SUMMARY.md: high-level project status
 - README.md: setup and API usage
+- IMPLEMENTATION_PLAN.md: 6-phase improvement roadmap
+- AGENTS.md (this file): fast restart guide for AI coding agents
 
 ## Recommended Working Rules
 
 - Keep changes incremental and checkpoint often.
-- Run regression tests after touching parse, clarify, scaling, or ordering code.
-- Preserve existing rollback tags; add new checkpoint tag before major UI or parser changes.
+- Run regression tests after touching parse or estimation code.
+- Preserve existing rollback tags; add new checkpoint tag before major changes.
 - Avoid broad refactors in the same commit as behavior changes.
+- Follow IMPLEMENTATION_PLAN.md phase sequence (currently completed Phase 0).
 
 ## Suggested Prompt To Resume Work
 
@@ -65,6 +70,6 @@ Review AGENTS.md and PROJECT_SUMMARY.md. Then run regression tests and report pr
 - List tags:
   - git tag --list
 - Move to known-good checkpoint in detached state:
-  - git checkout checkpoint-2026-04-12-stability
+  - git checkout phase-0-openai-estimation
 - Create recovery branch from checkpoint:
-  - git checkout -b recovery/stability checkpoint-2026-04-12-stability
+  - git checkout -b recovery/phase0 phase-0-openai-estimation

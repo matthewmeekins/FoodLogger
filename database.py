@@ -37,6 +37,8 @@ RESOLVED_ENTRY_EXTRA_COLUMNS = [
     ("confidence_level", "TEXT"),
     ("source", "TEXT"),
     ("assumptions", "TEXT"),  # json
+    ("reasoning", "TEXT"),  # OpenAI's component breakdown
+    ("openai_response", "TEXT"),  # Full OpenAI JSON response for audit trail
 ]
 
 PENDING_ENTRY_EXTRA_COLUMNS = [
@@ -272,6 +274,8 @@ def insert_resolved_entry(
     confidence_level: Optional[str] = None,
     source: Optional[str] = None,
     assumptions: Optional[List[str]] = None,
+    reasoning: Optional[str] = None,
+    openai_response: Optional[str] = None,
 ) -> int:
     """
     Insert a single resolved food item. Returns the resolved_id.
@@ -287,8 +291,8 @@ def insert_resolved_entry(
             sodium_mg, potassium_mg, cholesterol_mg,
             saturated_fat_g, trans_fat_g,
             calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu,
-            confidence_score, confidence_level, source, assumptions) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            confidence_score, confidence_level, source, assumptions, reasoning, openai_response) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             parsed_id,
             food_name,
@@ -314,6 +318,8 @@ def insert_resolved_entry(
             confidence_level,
             source,
             json.dumps(assumptions) if assumptions else None,
+            reasoning,
+            openai_response,
         )
     )
     
