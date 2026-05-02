@@ -505,58 +505,6 @@ def delete_resolved_entry(entry_id: int) -> bool:
     return deleted
 
 
-def get_entry_trace(entry_id: int) -> Optional[Dict[str, Any]]:
-    """
-    Get trace details for a resolved entry:
-    - raw input text (journal source)
-    - parsed structured response
-    - candidate responses considered during nutrition lookup
-    """
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """SELECT r.id as resolved_id, r.food_name, r.calories, r.meal, r.logged_date,
-                  r.source as resolved_source, r.confidence_level,
-                  p.id as parsed_id, p.parsed_json, p.confidence as parsed_confidence, p.created_at as parsed_created_at,
-                  rw.id as raw_id, rw.input_text as raw_input_text, rw.timestamp as raw_timestamp
-           FROM resolved_entries r
-           JOIN parsed_entries p ON p.id = r.parsed_id
-           JOIN raw_entries rw ON rw.id = p.raw_id
-           WHERE r.id = ?""",
-        (entry_id,)
-    )
-
-    row = cursor.fetchone()
-    if not row:
-        conn.close()
-        return None
-
-    trace = dict(row)
-
-    parsed_json_raw = trace.get("parsed_json")
-    if isinstance(parsed_json_raw, str):
-        try:
-            trace["parsed_json"] = json.loads(parsed_json_raw)
-        except json.JSONDecodeError:
-            trace["parsed_json"] = parsed_json_raw
-
-    parsed_id = trace["parsed_id"]
-    cursor.execute(
-        """SELECT intent_index, name, brand, serving, calories, protein_g, carbs_g, fat_g,
-                  source, source_url, source_confidence, score
-           FROM candidates
-           WHERE parsed_id = ?
-           ORDER BY intent_index ASC, score DESC""",
-        (parsed_id,)
-    )
-    candidate_rows = cursor.fetchall()
-    trace["candidates"] = [dict(r) for r in candidate_rows]
-
-    conn.close()
-    return trace
-
-
 def get_recent_entries_by_meal(meal: str, date: str, hours_ago: int = 2) -> List[Dict[str, Any]]:
     """
     Get entries for a specific meal type on a given date.
