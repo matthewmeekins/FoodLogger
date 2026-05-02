@@ -330,6 +330,68 @@ def get_entry_edit_history(entry_id: int) -> Dict[str, Any]:
     }
 
 
+@app.get("/log/{entry_id}/details")
+def get_entry_details(entry_id: int) -> Dict[str, Any]:
+    """Return plain-language ready details for an entry disclosure panel."""
+    details = database.get_entry_details(entry_id)
+    if not details:
+        raise HTTPException(status_code=404, detail="Entry not found")
+
+    quantity_value = details.get("quantity_value") or 1
+    quantity_unit = details.get("quantity_unit")
+    quantity_text = f"{quantity_value:g}" if isinstance(quantity_value, (int, float)) else str(quantity_value)
+    if quantity_unit:
+        quantity_text = f"{quantity_text} {quantity_unit}"
+
+    macro_parts = []
+    if details.get("protein_g") is not None:
+        macro_parts.append(f"protein {float(details['protein_g']):.1f}g")
+    if details.get("carbs_g") is not None:
+        macro_parts.append(f"carbs {float(details['carbs_g']):.1f}g")
+    if details.get("fat_g") is not None:
+        macro_parts.append(f"fat {float(details['fat_g']):.1f}g")
+    macros_text = ", ".join(macro_parts) if macro_parts else "macros unavailable"
+
+    assumptions = details.get("assumptions") or []
+
+    lines: list[str] = []
+    lines.append(f"This entry is for {details.get('food_name', 'Unknown item')}.")
+    if details.get("calories") is not None:
+        lines.append(f"Estimated calories: {details['calories']} cal for quantity {quantity_text}.")
+    else:
+        lines.append(f"Quantity recorded: {quantity_text}.")
+
+    if details.get("meal"):
+        lines.append(f"Meal tag: {details['meal']}.")
+    lines.append(f"Logged date: {details.get('logged_date')}.")
+    if details.get("created_at"):
+        lines.append(f"Entry created at: {details['created_at']}.")
+    lines.append(f"Macro estimate: {macros_text}.")
+
+    if details.get("source"):
+        lines.append(f"Source: {details['source']}.")
+    if details.get("confidence_level"):
+        lines.append(f"Confidence level: {details['confidence_level']}.")
+
+    if details.get("reasoning"):
+        lines.append(f"How this was estimated: {details['reasoning']}")
+
+    if assumptions:
+        lines.append("Assumptions used:")
+        lines.extend([f"- {assumption}" for assumption in assumptions])
+
+    if details.get("original_input"):
+        lines.append(f"Original journal input: {details['original_input']}")
+    if details.get("original_input_timestamp"):
+        lines.append(f"Original input timestamp: {details['original_input_timestamp']}.")
+
+    return {
+        "entry_id": entry_id,
+        "title": "Entry details",
+        "lines": lines,
+    }
+
+
 @app.get("/")
 def root():
     """Serve the web UI."""

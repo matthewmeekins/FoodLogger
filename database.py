@@ -553,6 +553,48 @@ def get_entry_edits(entry_id: int) -> List[Dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def get_entry_details(entry_id: int) -> Optional[Dict[str, Any]]:
+    """Get full entry details with source journal input for user-facing plain-language disclosure."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """SELECT r.id, r.food_name, r.calories, r.meal, r.logged_date, r.created_at,
+                  r.quantity_value, r.quantity_unit,
+                  r.protein_g, r.carbs_g, r.fat_g,
+                  r.fiber_g, r.sugar_g, r.sodium_mg, r.potassium_mg,
+                  r.cholesterol_mg, r.saturated_fat_g, r.trans_fat_g,
+                  r.calcium_mg, r.iron_mg, r.vitamin_c_mg, r.vitamin_d_iu,
+                  r.confidence_score, r.confidence_level, r.source,
+                  r.assumptions, r.reasoning,
+                  rw.input_text AS original_input,
+                  rw.timestamp AS original_input_timestamp
+           FROM resolved_entries r
+           LEFT JOIN parsed_entries p ON p.id = r.parsed_id
+           LEFT JOIN raw_entries rw ON rw.id = p.raw_id
+           WHERE r.id = ?""",
+        (entry_id,),
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    details = dict(row)
+    assumptions = details.get("assumptions")
+    if isinstance(assumptions, str):
+        try:
+            parsed = json.loads(assumptions)
+            details["assumptions"] = parsed if isinstance(parsed, list) else []
+        except json.JSONDecodeError:
+            details["assumptions"] = []
+    elif assumptions is None:
+        details["assumptions"] = []
+
+    return details
+
+
 def get_entries_for_date(date: str) -> List[Dict[str, Any]]:
     """
     Get all resolved entries for a specific date (YYYY-MM-DD).

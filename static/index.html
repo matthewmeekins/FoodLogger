@@ -800,6 +800,18 @@
             border-bottom: none;
         }
 
+        .trace-list {
+            margin: 0;
+            padding-left: 18px;
+            color: #c7d0e6;
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+
+        .trace-list li {
+            margin: 6px 0;
+        }
+
         .detail-food {
             color: #e6e9f3;
             font-weight: 500;
@@ -1166,7 +1178,7 @@
                                         ${macros}
                                         ${assumptions}
                                     </div>
-                                    <div class="trace-toggle" id="trace-toggle-${entry.id}">Trace ▼</div>
+                                    <div class="trace-toggle" id="trace-toggle-${entry.id}">Details ▼</div>
                                 </div>
                                 <div class="food-item-info">
                                     ${quantityControls}
@@ -1203,51 +1215,39 @@
 
             if (panel.classList.contains('visible')) {
                 panel.classList.remove('visible');
-                toggle.textContent = 'Trace ▼';
+                toggle.textContent = 'Details ▼';
                 return;
             }
 
             if (!panel.dataset.loaded) {
-                panel.innerHTML = '<div class="trace-block">Loading trace...</div>';
+                panel.innerHTML = '<div class="trace-block">Loading entry details...</div>';
                 panel.classList.add('visible');
-                toggle.textContent = 'Trace ▲';
+                toggle.textContent = 'Details ▲';
 
                 try {
-                    const response = await fetch(`${API_BASE}/log/${entryId}/trace`);
+                    const response = await fetch(`${API_BASE}/log/${entryId}/details`);
                     if (!response.ok) {
-                        throw new Error('Trace not available');
+                        throw new Error('Details not available');
                     }
 
                     const data = await response.json();
-                    const promptText = data.prompt_context?.raw_input_text || '—';
-                    const parsedJson = JSON.stringify(data.response_context?.parsed_json || {}, null, 2);
-                    const candidates = data.response_context?.candidates || [];
-
-                    const candidatesHtml = candidates.length > 0
-                        ? candidates.slice(0, 8).map(c => `
-                            <div class="trace-candidate">
-                                <strong>${c.name}</strong> (${c.source || 'unknown'})
-                                <div>Score: ${(c.score ?? 0).toFixed ? c.score.toFixed(3) : c.score}</div>
-                                <div>Calories: ${c.calories ?? '—'}</div>
-                            </div>
-                        `).join('')
-                        : '<div class="trace-block">No candidate response data.</div>';
+                    const lines = Array.isArray(data.lines) ? data.lines : [];
+                    const title = data.title || 'Entry details';
+                    const detailsHtml = lines.length > 0
+                        ? `<ul class="trace-list">${lines.map(line => `<li>${line}</li>`).join('')}</ul>`
+                        : '<div class="trace-block">No additional details available for this entry.</div>';
 
                     panel.innerHTML = `
-                        <div class="trace-section-title">Original Journal Input</div>
-                        <div class="trace-block">${promptText}</div>
-                        <div class="trace-section-title">Parsed LLM Response</div>
-                        <div class="trace-block">${parsedJson}</div>
-                        <div class="trace-section-title">Candidate Responses</div>
-                        ${candidatesHtml}
+                        <div class="trace-section-title">${title}</div>
+                        ${detailsHtml}
                     `;
                     panel.dataset.loaded = '1';
                 } catch (error) {
-                    panel.innerHTML = '<div class="trace-block">Could not load trace details for this entry.</div>';
+                    panel.innerHTML = '<div class="trace-block">Could not load entry details for this entry.</div>';
                 }
             } else {
                 panel.classList.add('visible');
-                toggle.textContent = 'Trace ▲';
+                toggle.textContent = 'Details ▲';
             }
         }
 

@@ -122,6 +122,37 @@ class FoodLogRegressionTests(unittest.TestCase):
         today_entries = database.get_entries_for_date(today)
         self.assertTrue(any(e["food_name"] == "BANANA" and e["calories"] == 105 for e in today_entries))
 
+    def test_entry_details_endpoint_returns_plain_language_lines(self) -> None:
+        today = date.today().isoformat()
+
+        raw_id = database.insert_raw_entry("I had 2 humm kombuchas")
+        parsed_id = database.insert_parsed_entry(raw_id, {"confidence": "high", "intents": []}, "high")
+        entry_id = database.insert_resolved_entry(
+            parsed_id=parsed_id,
+            food_name="Humm Mango Passionfruit Kombucha",
+            calories=160,
+            quantity_value=2,
+            quantity_unit="bottle",
+            protein_g=0,
+            carbs_g=36,
+            fat_g=0,
+            meal="snack",
+            logged_date=today,
+            source="openai",
+            confidence_level="high",
+            reasoning="Two bottles at roughly 80 calories each.",
+        )
+
+        client = TestClient(main.app)
+        response = client.get(f"/log/{entry_id}/details")
+        self.assertEqual(response.status_code, 200)
+
+        payload = response.json()
+        self.assertEqual(payload["title"], "Entry details")
+        self.assertTrue(isinstance(payload["lines"], list))
+        self.assertTrue(any("Estimated calories" in line for line in payload["lines"]))
+        self.assertTrue(any("Original journal input" in line for line in payload["lines"]))
+
 
 if __name__ == "__main__":
     unittest.main()
