@@ -4,7 +4,7 @@ Handles SQLite connection and all database operations.
 """
 
 import sqlite3
-from datetime import datetime, date, UTC
+from datetime import datetime, date, timedelta, UTC
 from typing import Optional, List, Dict, Any
 import json
 
@@ -46,7 +46,7 @@ RESOLVED_ENTRY_EXTRA_COLUMNS = [
 
 def get_connection() -> sqlite3.Connection:
     """Get a database connection with row factory enabled."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -61,6 +61,26 @@ def _ensure_resolved_entry_columns(cursor: sqlite3.Cursor) -> None:
             cursor.execute(
                 f"ALTER TABLE resolved_entries ADD COLUMN {column_name} {column_type}"
             )
+
+
+def _migrate_parsed_entries_drop_confidence(cursor: sqlite3.Cursor) -> None:
+    """Remove the NOT NULL confidence column from parsed_entries (legacy schema)."""
+    cursor.execute("PRAGMA table_info(parsed_entries)")
+    cols = [row[1] for row in cursor.fetchall()]
+    if "confidence" not in cols:
+        return  # already migrated
+    cursor.executescript("""
+        CREATE TABLE IF NOT EXISTS parsed_entries_new (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            raw_id      INTEGER NOT NULL REFERENCES raw_entries(id),
+            parsed_json TEXT NOT NULL,
+            created_at  TEXT NOT NULL
+        );
+        INSERT INTO parsed_entries_new (id, raw_id, parsed_json, created_at)
+            SELECT id, raw_id, parsed_json, created_at FROM parsed_entries;
+        DROP TABLE parsed_entries;
+        ALTER TABLE parsed_entries_new RENAME TO parsed_entries;
+    """)
 
 
 def _backfill_resolved_entry_created_at(cursor: sqlite3.Cursor) -> None:
@@ -191,6 +211,8 @@ def init_db() -> None:
     """)
 
     # Ensure existing databases are upgraded with any missing nutrient columns.
+    cursor.execute("PRAGMA journal_mode=WAL")  # allows concurrent reads during writes
+    _migrate_parsed_entries_drop_confidence(cursor)
     _ensure_resolved_entry_columns(cursor)
     _ensure_indexes(cursor)
     _backfill_resolved_entry_created_at(cursor)
@@ -643,29 +665,13 @@ def get_summary_last_n_days(days: int = 7) -> List[Dict[str, Any]]:
     """
     Get total calories and macros grouped by date for the last N days.
     Returns list of {date, total_calories, total_protein_g, total_carbs_g, total_fat_g, entry_count}.
+    Uses local date (not SQLite's UTC date('now')) to avoid timezone drift.
     """
-    conn = get_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute(
-        """SELECT 
-               logged_date as date,
-               SUM(calories) as total_calories,
-               SUM(protein_g) as total_protein_g,
-               SUM(carbs_g) as total_carbs_g,
-               SUM(fat_g) as total_fat_g,
-               COUNT(*) as entry_count
-           FROM resolved_entries
-           WHERE logged_date >= date('now', '-' || ? || ' days')
-           GROUP BY logged_date
-           ORDER BY logged_date DESC""",
-        (days,)
-    )
-    
-    rows = cursor.fetchall()
-    conn.close()
-    
-    return [dict(row) for row in rows]
+    today = date.today()
+    start = (today - timedelta(days=days - 1)).isoformat()
+    end = today.isoformat()
+
+    return get_summary_by_date_range(start, end)
 
 
 def get_summary_by_date_range(start_date: str, end_date: str) -> List[Dict[str, Any]]:
