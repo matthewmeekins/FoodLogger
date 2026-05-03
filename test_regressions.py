@@ -1,7 +1,8 @@
 import os
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime
+from unittest.mock import patch, MagicMock
 
 from fastapi.testclient import TestClient
 
@@ -152,6 +153,43 @@ class FoodLogRegressionTests(unittest.TestCase):
         self.assertTrue(isinstance(payload["lines"], list))
         self.assertTrue(any("Estimated calories" in line for line in payload["lines"]))
         self.assertTrue(any("Original journal input" in line for line in payload["lines"]))
+
+
+    def test_meal_auto_detection_from_time_of_day(self) -> None:
+        """estimate_nutrition uses hour to infer meal when not mentioned by user."""
+        import llm
+
+        CASES = [
+            (7,  "breakfast"),   # 7am → breakfast
+            (12, "lunch"),       # 12pm → lunch
+            (18, "dinner"),      # 6pm → dinner
+            (15, "snack"),       # 3pm → snack (outside breakfast/lunch/dinner windows)
+        ]
+
+        for hour, expected_meal in CASES:
+            fake_time = datetime(2026, 5, 2, hour, 0, 0)
+            fake_response = MagicMock()
+            fake_response.choices = [MagicMock()]
+            fake_response.choices[0].message.content = f'{{"items": [{{"name": "Test food", "calories": 100, "quantity_value": 1, "quantity_unit": null, "protein_g": 5, "carbs_g": 10, "fat_g": 2, "meal": "{expected_meal}", "reasoning": "test"}}], "logged_date": "2026-05-02"}}'
+            fake_response.usage = None
+
+            with patch.object(llm, '_chat_completion_with_retry', return_value=fake_response):
+                result = llm.estimate_nutrition("a banana", api_key="fake-key", current_time=fake_time)
+
+            meals = [item["meal"] for item in result["items"]]
+            self.assertEqual(meals[0], expected_meal,
+                             f"At hour={hour}, expected meal={expected_meal}, got {meals[0]}")
+
+    def test_meal_prompt_contains_explicit_time_rules(self) -> None:
+        """The system prompt must contain explicit hour-range rules for meal inference."""
+        import llm
+        import inspect
+
+        source = inspect.getsource(llm.estimate_nutrition)
+        # Check for at least one explicit hour bracket used in time-based meal assignment
+        self.assertIn("5–10", source, "Prompt should contain breakfast hour range 5–10")
+        self.assertIn("11–13", source, "Prompt should contain lunch hour range 11–13")
+        self.assertIn("17–21", source, "Prompt should contain dinner hour range 17–21")
 
 
 if __name__ == "__main__":

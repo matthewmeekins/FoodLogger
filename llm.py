@@ -125,10 +125,14 @@ Critical rules:
 7. Split multiple distinct foods into separate items
 8. In reasoning, show your calculation (e.g., "2oz sauce ~30 cal, naan ~220 cal, cheese ~110 cal, 14 pepperoni ~140 cal = 500 cal total")
 
-Meal assignment rules:
-- Use user's explicit mention ("for breakfast", "at lunch")
-- Missing explicit mention: Use time context if provided
-- Use null if completely unclear
+Meal assignment rules (apply in priority order):
+1. Explicit user mention wins: "for breakfast", "at lunch", "dinner", "snack" → use that meal
+2. If no explicit mention, use current hour to infer:
+   - 5–10 (5am–10:59am) → breakfast
+   - 11–13 (11am–1:59pm) → lunch
+   - 17–21 (5pm–9:59pm) → dinner
+   - All other hours (2–4pm, 10pm–4am) → snack
+3. Use null ONLY if current time is not provided and user didn't mention a meal
 
 Examples:
 1. "I had a banana" → name: "Banana", calories: 105, quantity_value: 1, quantity_unit: null, protein_g: 1.3, carbs_g: 27, fat_g: 0.4, reasoning: "Medium banana, standard USDA values"

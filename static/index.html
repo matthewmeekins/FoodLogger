@@ -514,6 +514,59 @@
             color: #a0ebca;
         }
 
+        .meal-filter-bar {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+
+        .meal-filter-btn {
+            padding: 5px 14px;
+            border-radius: 999px;
+            border: 1px solid #31394d;
+            background: #212636;
+            color: #adb6ca;
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            transition: border-color 0.15s, color 0.15s, background 0.15s;
+        }
+
+        .meal-filter-btn:hover {
+            border-color: #5b6a8a;
+            color: #ccd4e8;
+        }
+
+        .meal-filter-btn.active {
+            background: #1a2340;
+            border-color: #5b7aff;
+            color: #a8baff;
+        }
+
+        .meal-filter-btn.active.breakfast { border-color: rgba(255, 181, 72, 0.7); color: #ffd59f; }
+        .meal-filter-btn.active.lunch     { border-color: rgba(95, 170, 255, 0.7); color: #abd3ff; }
+        .meal-filter-btn.active.dinner    { border-color: rgba(213, 124, 255, 0.7); color: #e4beff; }
+        .meal-filter-btn.active.snack     { border-color: rgba(47, 196, 141, 0.7); color: #a0ebca; }
+
+        .meal-group-header {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: #5b6a8a;
+            margin: 18px 0 8px 0;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #212636;
+        }
+
+        .meal-group-header.breakfast { color: #c4934a; }
+        .meal-group-header.lunch     { color: #5390cc; }
+        .meal-group-header.dinner    { color: #9b5ec0; }
+        .meal-group-header.snack     { color: #2faa7a; }
+
         .calories {
             font-weight: 600;
             color: #8fb2ff;
@@ -894,6 +947,13 @@
         <div id="today-tab" class="tab-content">
             <div class="card">
                 <h2 class="section-title">Today's Entries</h2>
+                <div class="meal-filter-bar" id="meal-filter-bar">
+                    <button class="meal-filter-btn active" data-meal="all" onclick="setMealFilter('all')">All</button>
+                    <button class="meal-filter-btn breakfast" data-meal="breakfast" onclick="setMealFilter('breakfast')">Breakfast</button>
+                    <button class="meal-filter-btn lunch" data-meal="lunch" onclick="setMealFilter('lunch')">Lunch</button>
+                    <button class="meal-filter-btn dinner" data-meal="dinner" onclick="setMealFilter('dinner')">Dinner</button>
+                    <button class="meal-filter-btn snack" data-meal="snack" onclick="setMealFilter('snack')">Snack</button>
+                </div>
                 <div id="today-entries">
                     <div class="empty-state">
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1116,95 +1176,161 @@
             }
         }
 
-        // Load today's entries
-        async function loadTodayEntries() {
+        // Meal filter state
+        let _todayEntries = [];
+        let _activeMealFilter = 'all';
+        let _todayTotalCalories = 0;
+
+        function setMealFilter(meal) {
+            _activeMealFilter = meal;
+            // Update button active states
+            document.querySelectorAll('.meal-filter-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.meal === meal);
+            });
+            renderTodayEntries();
+        }
+
+        function _buildEntryHtml(entry) {
+            const mealClass = entry.meal ? entry.meal.toLowerCase() : '';
+            const mealBadge = entry.meal ? `<span class="meal-badge ${mealClass}">${entry.meal}</span>` : '';
+            const calories = entry.calories ? `<span class="calories">${entry.calories} cal</span>` : '';
+            const quantityLabel = formatQuantityLabel(entry);
+            const quantity = Number(entry.quantity_value) || 1;
+            const quantityMarkup = quantityLabel ? `<span class="quantity-label">${quantityLabel}</span>` : '';
+            const quantityControls = `<span class="quantity-controls"><button class="qty-btn" onclick="adjustQuantity(${entry.id}, -1, ${quantity}); event.stopPropagation();">-</button><button class="qty-btn" onclick="adjustQuantity(${entry.id}, 1, ${quantity}); event.stopPropagation();">+</button></span>`;
+            const confidence = entry.confidence_level ? `<span class="confidence ${entry.confidence_level}">${entry.confidence_level}</span>` : '';
+            const source = entry.source ? `<span class="source">${entry.source}</span>` : '';
+            const entryTime = formatEntryTime(entry.created_at);
+            const timeLine = entryTime ? `<div class="entry-time">${entryTime}</div>` : '';
+            const macros = entry.protein_g || entry.carbs_g || entry.fat_g ?
+                `<div class="macros">Macros: Protein ${formatNutrient(entry.protein_g)}g | Carbs ${formatNutrient(entry.carbs_g)}g | Fat ${formatNutrient(entry.fat_g)}g</div>` : '';
+            const assumptions = entry.assumptions && entry.assumptions.length > 0 ?
+                `<div class="assumptions-toggle" onclick="toggleAssumptions(this)">Why this estimate? ▼</div>
+                 <div class="assumptions-panel" style="display: none;">
+                     <ul>${entry.assumptions.map(a => `<li>${a}</li>`).join('')}</ul>
+                 </div>` : '';
+
+            return `
+                <div class="food-item">
+                    <div class="food-main">
+                        <div class="food-details" onclick="toggleEntryTrace(${entry.id})">
+                            <div class="food-name">
+                                ${entry.food_name}
+                                ${mealBadge}
+                                ${confidence}
+                                ${source}
+                            </div>
+                            <div class="food-meta">
+                                ${timeLine}
+                                ${calories}
+                                ${quantityMarkup}
+                                ${macros}
+                                ${assumptions}
+                            </div>
+                            <div class="trace-toggle" id="trace-toggle-${entry.id}">Details ▼</div>
+                        </div>
+                        <div class="food-item-info">
+                            ${quantityControls}
+                            <button class="edit-btn" onclick="openEditModal(${entry.id})">Edit</button>
+                            <button class="delete-btn" onclick="deleteEntry(${entry.id})">Delete</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="trace-${entry.id}" class="trace-panel"></div>
+            `;
+        }
+
+        function renderTodayEntries() {
             const container = document.getElementById('today-entries');
             const totalSection = document.getElementById('today-total');
-            
-            container.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
 
-            try {
-                const response = await fetch(`${API_BASE}/log/today`);
-                const data = await response.json();
+            const MEAL_ORDER = ['breakfast', 'lunch', 'dinner', 'snack'];
 
-                if (data.entries.length === 0) {
+            if (_activeMealFilter === 'all') {
+                // Group by meal in canonical order, then unspecified
+                const groups = {};
+                _todayEntries.forEach(entry => {
+                    const meal = entry.meal ? entry.meal.toLowerCase() : 'unspecified';
+                    if (!groups[meal]) groups[meal] = [];
+                    groups[meal].push(entry);
+                });
+
+                const orderedMeals = [...MEAL_ORDER.filter(m => groups[m]), ...Object.keys(groups).filter(m => !MEAL_ORDER.includes(m) && groups[m])];
+
+                if (orderedMeals.length === 0) {
                     container.innerHTML = `
                         <div class="empty-state">
                             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
                             </svg>
                             <p>No entries yet today</p>
-                        </div>
-                    `;
+                        </div>`;
                     totalSection.style.display = 'none';
                     return;
                 }
 
                 let html = '';
-                data.entries.forEach(entry => {
-                    const mealClass = entry.meal ? entry.meal.toLowerCase() : '';
-                    const mealBadge = entry.meal ? `<span class="meal-badge ${mealClass}">${entry.meal}</span>` : '';
-                    const calories = entry.calories ? `<span class="calories">${entry.calories} cal</span>` : '';
-                    const quantityLabel = formatQuantityLabel(entry);
-                    const quantity = Number(entry.quantity_value) || 1;
-                    const quantityMarkup = quantityLabel ? `<span class="quantity-label">${quantityLabel}</span>` : '';
-                    const quantityControls = `<span class="quantity-controls"><button class="qty-btn" onclick="adjustQuantity(${entry.id}, -1, ${quantity}); event.stopPropagation();">-</button><button class="qty-btn" onclick="adjustQuantity(${entry.id}, 1, ${quantity}); event.stopPropagation();">+</button></span>`;
-                    const confidence = entry.confidence_level ? `<span class="confidence ${entry.confidence_level}">${entry.confidence_level}</span>` : '';
-                    const source = entry.source ? `<span class="source">${entry.source}</span>` : '';
-                    const entryTime = formatEntryTime(entry.created_at);
-                    const timeLine = entryTime ? `<div class="entry-time">${entryTime}</div>` : '';
-                    const macros = entry.protein_g || entry.carbs_g || entry.fat_g ? 
-                        `<div class="macros">Macros: Protein ${formatNutrient(entry.protein_g)}g | Carbs ${formatNutrient(entry.carbs_g)}g | Fat ${formatNutrient(entry.fat_g)}g</div>` : '';
-                    const assumptions = entry.assumptions && entry.assumptions.length > 0 ? 
-                        `<div class="assumptions-toggle" onclick="toggleAssumptions(this)">Why this estimate? ▼</div>
-                         <div class="assumptions-panel" style="display: none;">
-                             <ul>${entry.assumptions.map(a => `<li>${a}</li>`).join('')}</ul>
-                         </div>` : '';
-                    
-                    html += `
-                        <div class="food-item">
-                            <div class="food-main">
-                                <div class="food-details" onclick="toggleEntryTrace(${entry.id})">
-                                    <div class="food-name">
-                                        ${entry.food_name}
-                                        ${mealBadge}
-                                        ${confidence}
-                                        ${source}
-                                    </div>
-                                    <div class="food-meta">
-                                        ${timeLine}
-                                        ${calories}
-                                        ${quantityMarkup}
-                                        ${macros}
-                                        ${assumptions}
-                                    </div>
-                                    <div class="trace-toggle" id="trace-toggle-${entry.id}">Details ▼</div>
-                                </div>
-                                <div class="food-item-info">
-                                    ${quantityControls}
-                                    <button class="edit-btn" onclick="openEditModal(${entry.id})">Edit</button>
-                                    <button class="delete-btn" onclick="deleteEntry(${entry.id})">Delete</button>
-                                </div>
-                            </div>
-                        </div>
-                        <div id="trace-${entry.id}" class="trace-panel"></div>
-                    `;
+                orderedMeals.forEach(meal => {
+                    const label = meal.charAt(0).toUpperCase() + meal.slice(1);
+                    html += `<div class="meal-group-header ${meal === 'unspecified' ? '' : meal}">${label}</div>`;
+                    groups[meal].forEach(entry => { html += _buildEntryHtml(entry); });
                 });
-
                 container.innerHTML = html;
-                
-                // Show total if we have calorie data
-                if (data.total_calories > 0) {
-                    document.getElementById('total-calories').textContent = data.total_calories;
+
+            } else {
+                // Filter to selected meal
+                const filtered = _todayEntries.filter(e => (e.meal || '').toLowerCase() === _activeMealFilter);
+
+                if (filtered.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <p>No ${_activeMealFilter} entries today</p>
+                        </div>`;
+                    totalSection.style.display = 'none';
+                    return;
+                }
+
+                let html = '';
+                filtered.forEach(entry => { html += _buildEntryHtml(entry); });
+                container.innerHTML = html;
+
+                // Show filtered calorie total
+                const filteredCals = filtered.reduce((sum, e) => sum + (e.calories || 0), 0);
+                if (filteredCals > 0) {
+                    document.getElementById('total-calories').textContent = filteredCals;
                     totalSection.style.display = 'block';
                 } else {
                     totalSection.style.display = 'none';
                 }
+                return;
+            }
+
+            if (_todayTotalCalories > 0) {
+                document.getElementById('total-calories').textContent = _todayTotalCalories;
+                totalSection.style.display = 'block';
+            } else {
+                totalSection.style.display = 'none';
+            }
+        }
+
+        // Load today's entries
+        async function loadTodayEntries() {
+            const container = document.getElementById('today-entries');
+            container.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/log/today`);
+                const data = await response.json();
+
+                _todayEntries = data.entries || [];
+                _todayTotalCalories = data.total_calories || 0;
+                renderTodayEntries();
 
             } catch (error) {
                 container.innerHTML = `<div class="empty-state"><p>Error loading entries</p></div>`;
             }
         }
+
 
         async function toggleEntryTrace(entryId) {
             const panel = document.getElementById(`trace-${entryId}`);

@@ -4,7 +4,7 @@ Handles SQLite connection and all database operations.
 """
 
 import sqlite3
-from datetime import datetime, UTC
+from datetime import datetime, date, UTC
 from typing import Optional, List, Dict, Any
 import json
 
@@ -730,7 +730,7 @@ def add_entry_to_today(entry_id: int) -> Optional[int]:
         conn.close()
         return None
 
-    today = datetime.now(UTC).date().isoformat()
+    today = date.today().isoformat()
     created_at = datetime.now(UTC).isoformat()
     source = dict(row)
 
