@@ -2,10 +2,10 @@
 
 ## Snapshot
 
-- Last updated: May 1, 2026
-- Branch: feature/openai-pivot
-- Phase: 1 (Edit entries) - COMPLETED
-- Latest checkpoint tag: phase-1-edit-entries
+- Last updated: May 2, 2026
+- Branch: feature/nutrition-confidence-loop
+- Phase: 4 (Favorites) - COMPLETED
+- Latest checkpoint tag: phase-1-edit-entries (phases 2–4 committed, not individually tagged)
 
 ## Project Overview
 
@@ -17,9 +17,10 @@ The system now supports:
 
 - Direct OpenAI calorie and macro estimation for any food
 - Component breakdowns with reasoning for complex meals
-- Automatic meal type detection (breakfast, lunch, dinner, snack)
+- Automatic meal type detection (breakfast, lunch, dinner, snack) from time of day
 - Full audit trail (original input + complete OpenAI response)
-- Today and Summary tabs with date range filtering and deletions
+- Today, Weekly, and Summary tabs with date range filtering, editing, and deletions
+- Favorites system: save common meals/items and quick-log them with one tap
 - Lightweight operational metrics and rate limiting
 - Remote access via Tailscale from iPhone/Siri Shortcuts
 
@@ -32,12 +33,16 @@ The system now supports:
 - SQLite persistence in database.py
 - **REMOVED:** Complex nutrition provider system (USDA, OpenFoodFacts, WebSearch)
 - **REMOVED:** Clarification loop logic
-- **REMOVED:** Confidence scoring and gating
+- **REMOVED:** Confidence scoring (confidence_score, confidence_level fields)
 
 ### Frontend
 
 - Single-page UI in static/index.html
-- Tabs: Log Food, Today, Summary
+- Tabs: Log Food, Today, Weekly, Summary
+- Log Food tab: text input + favorites quick-log section (search bar + cards)
+- Today tab: entries grouped by meal, newest first; star button to save as favorite
+- Weekly tab: 7-day bar chart and macro summary table
+- Summary tab: date range selector with macro totals per day
 - Enter key submit support in main input
 - Status messages for processing and completion
 - Entry timestamps shown in Today and date-detail lists
@@ -53,8 +58,11 @@ Tables in active use:
 - **resolved_entries** - Logged food items with macros
   - `reasoning` field - OpenAI's component breakdown
   - `openai_response` field - Complete OpenAI JSON response
+  - `quantity_value`, `quantity_unit`, `per_unit_*` fields for scaling
 - **entry_edits** - Audit trail for entry modifications
   - Tracks field_name, old_value, new_value, edited_at
+- **favorites** - Saved meals/items for quick re-logging
+  - `name`, `items_json` (array of nutrition dicts), `created_at`
 
 Tables deprecated (not deleted, but no longer used):
 
@@ -83,11 +91,20 @@ Core:
 - **POST /log** - Log food via natural language
 - **PUT /log/{id}** - Edit existing entry (calories, name, macros, meal, date)
 - **GET /log/today** - Today's entries
-- **GET /log/summary** - Multi-day summary
+- **GET /log/summary** - Multi-day summary with macro totals
+- **GET /log/weekly** - 7-day summary with bar chart data, totals, averages
 - **GET /log/date/{date}** - Specific date entries
 - **DELETE /log/{id}** - Remove entry
-- **GET /log/{id}/trace** - View audit trail
+- **GET /log/{id}/details** - Plain-language audit view with original input
 - **GET /log/{id}/edits** - View edit history
+- **POST /log/{id}/add-to-today** - Clone historical entry to today
+
+Favorites:
+
+- **POST /favorites** - Save a new favorite
+- **GET /favorites** - List all favorites with totals
+- **DELETE /favorites/{id}** - Delete a favorite
+- **POST /favorites/{id}/log** - Log all favorite items as today's entries
 
 Deprecated (return 410 Gone):
 
@@ -100,18 +117,6 @@ Observability:
 - GET /health
 - GET /
 
-- GET /log/today
-- GET /log/summary
-- GET /log/date/{target_date}
-- DELETE /log/{entry_id}
-
-Observability and health:
-
-- GET /log/{entry_id}/trace
-- GET /metrics
-- GET /health
-- GET /
-
 ## Configuration
 
 Required:
@@ -120,22 +125,28 @@ Required:
 
 Optional:
 
-- USDA_API_KEY
 - OPENAI_TIMEOUT_SECONDS
 - OPENAI_MAX_RETRIES
-- MAX_CLARIFICATION_ROUNDS
 - RATE_LIMIT_PER_MINUTE
 
 ## Testing and Quality
 
-Regression test suite exists in test_regressions.py.
+Regression test suite in test_regressions.py. 12 tests, all passing.
 
-Current coverage:
+Coverage:
 
-- Component splitting into separate intents
-- Clarification drift protection
-- Quantity scaling behavior for USDA-style candidates
 - Today endpoint ordering (newest first)
+- Quantity update recalculates calories/macros proportionally
+- Add-to-today clones historical entries
+- Entry details endpoint returns plain-language lines
+- Meal auto-detection from time of day
+- System prompt contains explicit meal time rules
+- Weekly endpoint returns 7-day structure
+- Weekly endpoint computes totals and averages
+- Summary endpoint includes macro totals
+- Favorites create, list, delete
+- Log favorite creates today entries
+- Favorites multi-item total computation
 
 Run:
 
@@ -145,16 +156,15 @@ Run:
 
 Available tags:
 
-- v0.1-baseline-before-nutrition
-- v0.2-checkpoint-2
-- v0.3-checkpoint-3
-- v0.4-checkpoint-4
-- v0.6-pre-cost-latency
-- v0.6-checkpoint-cost-latency
-- v0.7-pre-ui-work
-- v0.8-pre-entry-trace
-- checkpoint-2026-04-12-ui-flow
-- checkpoint-2026-04-12-stability
+- phase-0-openai-estimation
+- phase-1-edit-entries
+
+Recent commits on feature/nutrition-confidence-loop:
+
+- Phase 2: meal categorization and UI filters
+- Phase 3: weekly summary with bar chart and macro tracking
+- Phase 4: favorites system
+- chore: remove confidence_score/confidence_level fields
 
 ## Known Gaps and Next Priorities
 
@@ -163,14 +173,13 @@ Current gaps:
 - No auth or multi-user support
 - No export/import workflow
 - No background jobs for analytics
-- No deployment automation documented in-repo
+- Favorites not yet recognized in natural language input (deferred from Phase 4)
 
-Recommended next priorities:
+Recommended next priorities (see IMPLEMENTATION_PLAN.md Phase 5+):
 
-1. Add CSV or JSON export endpoint for portability.
-2. Add basic auth or local passcode gate if used on shared networks.
-3. Add smoke tests for clarify and manual-estimate flows against API responses.
-4. Add deployment profile for Mac local development and optional cloud target.
+1. Email digests (daily/weekly summary)
+2. Natural language favorite recognition ("I had my naan pizza")
+3. CSV/JSON export endpoint for portability
 
 ## Quick Start Commands
 

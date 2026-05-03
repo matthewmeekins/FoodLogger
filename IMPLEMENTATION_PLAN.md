@@ -217,17 +217,18 @@
 - Can reference favorites by name in natural language
 
 **Scope:**
-1. New table: `favorites` (id, name, description, items_json, total_calories, total_protein_g, total_carbs_g, total_fat_g, created_at)
-2. `items_json`: Array of {food_name, calories, protein_g, carbs_g, fat_g, reasoning}
+1. New table: `favorites` (id, name, items_json, created_at)
+2. `items_json`: Array of {food_name, calories, protein_g, carbs_g, fat_g, reasoning, quantity_value, quantity_unit, per_unit_*}
 3. New endpoints:
-   - `POST /favorites` (save new favorite from current log or manual)
-   - `GET /favorites` (list all)
-   - `GET /favorites/{id}` (get specific favorite)
-   - `POST /log/favorite/{favorite_id}` (log entire favorite)
-   - `PUT /favorites/{id}` (edit favorite)
+   - `POST /favorites` (save new favorite)
+   - `GET /favorites` (list all with computed totals)
+   - `POST /favorites/{id}/log` (log all items from favorite as today's entries)
    - `DELETE /favorites/{id}` (delete favorite)
-4. OpenAI enhancement: Recognize favorite references in input
-5. UI: "Favorites" tab, "Save as Favorite" button, quick-log interface
+4. UI: Favorites section in Log Food tab (search bar + quick-log cards)
+5. UI: ★ button on each Today entry to save as single-item favorite
+6. UI: "Save meal" button on meal group headers to save all items as multi-item favorite
+
+**Note:** Favorites are immutable after creation (create/delete only, no PUT). Natural language recognition of favorites was deferred.
 
 **Example:**
 - Save favorite: "My Naan Pizza" = sauce(30 cal) + naan(220 cal) + cheese(110 cal) + pepperoni(140 cal) = 500 cal total
@@ -242,12 +243,12 @@
 **Testing:**
 - Save "Standard Breakfast" = banana (105 cal) + coffee (5 cal)
 - Log via favorite button → both items logged with correct macros
-- Natural language: "I had my standard breakfast" → logs favorite
-- Edit favorite → update components
 - Delete favorite → verify removal
-- View favorites list in UI
+- View favorites list in UI with search filtering
+- Save single entry as favorite with ★ button
+- Save whole meal group as multi-item favorite
 
-**Git commit:** `"feat: favorites system for common meals with natural language support"`
+**Git commit:** `"feat: favorites system for quick re-logging common meals"`
 
 **Git tag:** `phase-4-favorites`
 

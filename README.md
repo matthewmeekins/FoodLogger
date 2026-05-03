@@ -8,10 +8,11 @@ Natural-language food logging app with OpenAI-powered calorie and macro estimati
 - Uses OpenAI to directly estimate calories and macronutrients (protein, carbs, fat)
 - Handles any food: home cooking, restaurant meals, packaged items, generic ingredients
 - Provides component breakdowns for complex meals (shows reasoning)
-- Automatically detects meal types (breakfast, lunch, dinner, snack)
+- Automatically detects meal types (breakfast, lunch, dinner, snack) from time of day and context
 - Logs everything immediately with full audit trail
 - Stores original input text and complete OpenAI responses for transparency
-- Provides Today and Summary views with delete actions and entry timestamps
+- Today, Weekly, and Summary views with edit, delete, and re-log actions
+- Favorites system: save common meals and quick-log them from the Log Food tab
 
 ## Tech Stack
 
@@ -68,14 +69,27 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
    - Tracks all edits in audit trail
 - **GET /log/{entry_id}/edits**
    - Returns full edit history for an entry
+- **GET /log/{entry_id}/details**
+   - Returns plain-language summary of entry with original input and OpenAI response
+- **POST /log/{entry_id}/add-to-today**
+   - Clones any historical entry onto today's date
 
 ### Read/list/delete
 
 - GET /log/today
 - GET /log/summary
    - Optional query params: start_date, end_date (YYYY-MM-DD)
+- GET /log/weekly
+   - Optional query param: start_date (YYYY-MM-DD, defaults to 7 days ago)
 - GET /log/date/{target_date}
 - DELETE /log/{entry_id}
+
+### Favorites
+
+- **POST /favorites** — save a new favorite (name + list of nutrition items)
+- **GET /favorites** — list all favorites with computed totals
+- **DELETE /favorites/{id}** — delete a favorite
+- **POST /favorites/{id}/log** — log all items from a favorite as today's entries
 
 ### Health and metrics
 
@@ -115,10 +129,14 @@ curl http://localhost:8000/log/today
 
 - Return/Enter submits main log input (Shift+Enter keeps newline)
 - Processing, success, and error states are shown in status messages
-- Today tab shows newest entries first
+- **Log Food tab:** text input + favorites section (search bar + quick-log cards)
+- **Today tab:** newest entries first, grouped by meal, with edit/delete/re-log actions
+- **Weekly tab:** 7-day bar chart and macro summary table
+- **Summary tab:** calendar-based date range with macro totals
 - Entry macro line shows Protein/Carbs/Fat with capped decimal formatting
 - Entry timestamps displayed in local-time format
 - Each entry shows OpenAI's component breakdown reasoning
+- ★ button on each entry or meal group saves as a favorite
 
 ## Testing
 
@@ -133,3 +151,14 @@ Run:
 Current regression coverage:
 
 - Today endpoint ordering (newest first)
+- Quantity update recalculates calories and macros proportionally
+- Add-to-today clones historical entries correctly
+- Entry details endpoint returns plain-language lines
+- Meal auto-detection from time of day
+- System prompt contains explicit meal time rules
+- Weekly endpoint returns 7-day structure
+- Weekly endpoint computes totals and averages
+- Summary endpoint includes macro totals
+- Favorites create, list, and delete
+- Log favorite creates today entries
+- Favorites multi-item total computation
