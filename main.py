@@ -5,7 +5,7 @@ FastAPI application for food logging system.
 import os
 import json
 import time
-from datetime import date
+from datetime import date, timedelta
 from typing import Dict, Any
 from collections import deque
 from fastapi import FastAPI, Request, HTTPException, Body
@@ -241,6 +241,21 @@ def get_summary(start_date: str | None = None, end_date: str | None = None, days
         "days": days,
         "summary": summary,
     }
+
+
+@app.get("/log/weekly")
+def get_weekly(start_date: str | None = None) -> Dict[str, Any]:
+    """
+    Get a 7-day weekly summary starting from start_date (YYYY-MM-DD).
+    Defaults to the most recent Monday if start_date is not provided.
+    Returns per-day stats, weekly totals/averages, and meal frequency.
+    """
+    if start_date is None:
+        today = date.today()
+        # Most recent Monday (weekday 0 = Monday)
+        start_date = (today - timedelta(days=today.weekday())).isoformat()
+
+    return database.get_weekly_summary(start_date)
 
 
 @app.get("/log/date/{target_date}")

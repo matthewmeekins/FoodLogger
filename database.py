@@ -638,8 +638,8 @@ def get_entries_for_date(date: str) -> List[Dict[str, Any]]:
 
 def get_summary_last_n_days(days: int = 7) -> List[Dict[str, Any]]:
     """
-    Get total calories grouped by date for the last N days.
-    Returns list of {date, total_calories, entry_count}.
+    Get total calories and macros grouped by date for the last N days.
+    Returns list of {date, total_calories, total_protein_g, total_carbs_g, total_fat_g, entry_count}.
     """
     conn = get_connection()
     cursor = conn.cursor()
@@ -648,6 +648,9 @@ def get_summary_last_n_days(days: int = 7) -> List[Dict[str, Any]]:
         """SELECT 
                logged_date as date,
                SUM(calories) as total_calories,
+               SUM(protein_g) as total_protein_g,
+               SUM(carbs_g) as total_carbs_g,
+               SUM(fat_g) as total_fat_g,
                COUNT(*) as entry_count
            FROM resolved_entries
            WHERE logged_date >= date('now', '-' || ? || ' days')
@@ -664,8 +667,8 @@ def get_summary_last_n_days(days: int = 7) -> List[Dict[str, Any]]:
 
 def get_summary_by_date_range(start_date: str, end_date: str) -> List[Dict[str, Any]]:
     """
-    Get total calories grouped by date for an inclusive date range.
-    Returns list of {date, total_calories, entry_count}.
+    Get total calories and macros grouped by date for an inclusive date range.
+    Returns list of {date, total_calories, total_protein_g, total_carbs_g, total_fat_g, entry_count}.
     """
     conn = get_connection()
     cursor = conn.cursor()
@@ -674,6 +677,9 @@ def get_summary_by_date_range(start_date: str, end_date: str) -> List[Dict[str, 
         """SELECT
                logged_date as date,
                SUM(calories) as total_calories,
+               SUM(protein_g) as total_protein_g,
+               SUM(carbs_g) as total_carbs_g,
+               SUM(fat_g) as total_fat_g,
                COUNT(*) as entry_count
            FROM resolved_entries
            WHERE logged_date >= ? AND logged_date <= ?
@@ -686,6 +692,106 @@ def get_summary_by_date_range(start_date: str, end_date: str) -> List[Dict[str, 
     conn.close()
 
     return [dict(row) for row in rows]
+
+
+def get_weekly_summary(start_date: str) -> Dict[str, Any]:
+    """
+    Return a full 7-day weekly summary starting from start_date (YYYY-MM-DD).
+    Includes per-day stats, weekly totals/averages, and meal frequency.
+    """
+    from datetime import timedelta
+    start = date.fromisoformat(start_date)
+    end = start + timedelta(days=6)
+    end_date = end.isoformat()
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Per-day totals with macros
+    cursor.execute(
+        """SELECT
+               logged_date as date,
+               SUM(calories) as total_calories,
+               SUM(protein_g) as total_protein_g,
+               SUM(carbs_g) as total_carbs_g,
+               SUM(fat_g) as total_fat_g,
+               COUNT(*) as entry_count
+           FROM resolved_entries
+           WHERE logged_date >= ? AND logged_date <= ?
+           GROUP BY logged_date
+           ORDER BY logged_date ASC""",
+        (start_date, end_date),
+    )
+    day_rows = {row["date"]: dict(row) for row in cursor.fetchall()}
+
+    # Meal frequency counts across the week
+    cursor.execute(
+        """SELECT meal, COUNT(*) as count
+           FROM resolved_entries
+           WHERE logged_date >= ? AND logged_date <= ? AND meal IS NOT NULL
+           GROUP BY meal""",
+        (start_date, end_date),
+    )
+    meal_freq = {row["meal"]: row["count"] for row in cursor.fetchall()}
+
+    conn.close()
+
+    # Build ordered day list (fill in missing days with zeros)
+    days_list = []
+    for i in range(7):
+        d = (start + timedelta(days=i)).isoformat()
+        if d in day_rows:
+            days_list.append(day_rows[d])
+        else:
+            days_list.append({
+                "date": d,
+                "total_calories": None,
+                "total_protein_g": None,
+                "total_carbs_g": None,
+                "total_fat_g": None,
+                "entry_count": 0,
+            })
+
+    # Compute totals/averages only over days that have data
+    active_days = [d for d in days_list if d["entry_count"] > 0]
+    n = len(active_days)
+
+    def _sum(field):
+        return round(sum(d[field] or 0 for d in active_days), 1)
+
+    def _avg(field):
+        if n == 0:
+            return None
+        return round(_sum(field) / n, 1)
+
+    total_calories = _sum("total_calories")
+    avg_calories = _avg("total_calories")
+    total_protein = _sum("total_protein_g")
+    avg_protein = _avg("total_protein_g")
+    total_carbs = _sum("total_carbs_g")
+    avg_carbs = _avg("total_carbs_g")
+    total_fat = _sum("total_fat_g")
+    avg_fat = _avg("total_fat_g")
+
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "days": days_list,
+        "active_days": n,
+        "totals": {
+            "calories": total_calories,
+            "protein_g": total_protein,
+            "carbs_g": total_carbs,
+            "fat_g": total_fat,
+        },
+        "averages": {
+            "calories": avg_calories,
+            "protein_g": avg_protein,
+            "carbs_g": avg_carbs,
+            "fat_g": avg_fat,
+        },
+        "meal_frequency": meal_freq,
+    }
 
 
 def delete_resolved_entry(entry_id: int) -> bool:

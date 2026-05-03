@@ -876,6 +876,179 @@
             white-space: nowrap;
         }
 
+        /* Weekly view */
+        .secondary-btn {
+            background: #1a2340;
+            border: 1px solid #31394d;
+            color: #adb6ca;
+            font-size: 0.82rem;
+            padding: 6px 14px;
+        }
+
+        .secondary-btn:hover {
+            border-color: #5b6a8a;
+            color: #ccd4e8;
+        }
+
+        .weekly-nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            gap: 8px;
+        }
+
+        .weekly-range-label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #8899c0;
+            flex: 1;
+            text-align: center;
+        }
+
+        .weekly-chart {
+            display: flex;
+            align-items: flex-end;
+            gap: 6px;
+            height: 120px;
+            margin-bottom: 20px;
+            padding: 0 4px;
+        }
+
+        .weekly-bar-col {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100%;
+            justify-content: flex-end;
+            gap: 4px;
+        }
+
+        .weekly-bar {
+            width: 100%;
+            background: linear-gradient(180deg, #5b7aff 0%, #3a56d4 100%);
+            border-radius: 4px 4px 0 0;
+            min-height: 3px;
+            transition: height 0.3s ease;
+        }
+
+        .weekly-bar.today {
+            background: linear-gradient(180deg, #ffd59f 0%, #c4934a 100%);
+        }
+
+        .weekly-bar.empty {
+            background: #212636;
+            border: 1px dashed #31394d;
+        }
+
+        .weekly-bar-label {
+            font-size: 0.68rem;
+            color: #5b6a8a;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        .weekly-bar-cal {
+            font-size: 0.68rem;
+            color: #7080a0;
+            text-align: center;
+            min-height: 14px;
+        }
+
+        .weekly-stats-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+            margin-bottom: 20px;
+        }
+
+        .weekly-stats-table th {
+            text-align: left;
+            padding: 6px 10px;
+            color: #5b6a8a;
+            font-weight: 600;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-bottom: 1px solid #212636;
+        }
+
+        .weekly-stats-table td {
+            padding: 7px 10px;
+            color: #c0c8e0;
+            border-bottom: 1px solid #1a2033;
+        }
+
+        .weekly-stats-table tr:last-child td { border-bottom: none; }
+        .weekly-stats-table tr.today-row td { color: #ffd59f; }
+        .weekly-stats-table td.cal-cell { color: #8fb2ff; font-weight: 600; }
+
+        .weekly-totals-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 16px;
+        }
+
+        .weekly-stat-card {
+            background: #1a2033;
+            border: 1px solid #212636;
+            border-radius: 10px;
+            padding: 12px 14px;
+        }
+
+        .weekly-stat-card .stat-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #5b6a8a;
+            margin-bottom: 4px;
+        }
+
+        .weekly-stat-card .stat-value {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #8fb2ff;
+        }
+
+        .weekly-stat-card .stat-avg {
+            font-size: 0.72rem;
+            color: #4a5570;
+            margin-top: 2px;
+        }
+
+        .meal-freq-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 14px;
+        }
+
+        .meal-freq-chip {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            background: #1a2033;
+            border: 1px solid #212636;
+            border-radius: 999px;
+            padding: 4px 12px;
+            font-size: 0.76rem;
+            color: #8899c0;
+        }
+
+        .meal-freq-chip .chip-count {
+            font-weight: 700;
+            color: #a8baff;
+        }
+
+        /* Macro pills on summary day rows */
+        .summary-macros {
+            font-size: 0.72rem;
+            color: #5b6a8a;
+            margin-top: 2px;
+        }
+
         @media (max-width: 480px) {
             body {
                 padding: 14px;
@@ -912,6 +1085,7 @@
             <button class="tab active" onclick="switchTab('log', this)">Log Food</button>
             <button class="tab" onclick="switchTab('today', this)">Today</button>
             <button class="tab" onclick="switchTab('summary', this)">Summary</button>
+            <button class="tab" onclick="switchTab('weekly', this)">Weekly</button>
         </div>
 
         <!-- Log Food Tab -->
@@ -997,6 +1171,21 @@
                 <div id="summary-date-details" class="date-details" style="display: none;"></div>
             </div>
         </div>
+
+        <!-- Weekly Tab -->
+        <div id="weekly-tab" class="tab-content">
+            <div class="card">
+                <h2 class="section-title">Weekly Summary</h2>
+                <div class="weekly-nav">
+                    <button class="button secondary-btn" onclick="navigateWeek(-1)">&#8592; Prev</button>
+                    <span id="weekly-range-label" class="weekly-range-label"></span>
+                    <button class="button secondary-btn" onclick="navigateWeek(1)">Next &#8594;</button>
+                </div>
+                <div id="weekly-content">
+                    <div class="empty-state"><p>Loading...</p></div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -1022,6 +1211,8 @@
                 loadTodayEntries();
             } else if (tabName === 'summary') {
                 loadSummary();
+            } else if (tabName === 'weekly') {
+                loadWeekly();
             }
         }
 
@@ -1377,6 +1568,140 @@
             }
         }
 
+        // Weekly view state
+        let _weeklyStartDate = null;
+
+        function _getMondayOf(dateStr) {
+            const d = new Date(dateStr + 'T12:00:00');
+            const day = d.getDay(); // 0=Sun, 1=Mon...
+            const diff = day === 0 ? -6 : 1 - day;
+            d.setDate(d.getDate() + diff);
+            return formatIsoDate(d);
+        }
+
+        function navigateWeek(direction) {
+            if (!_weeklyStartDate) return;
+            const d = new Date(_weeklyStartDate + 'T12:00:00');
+            d.setDate(d.getDate() + direction * 7);
+            _weeklyStartDate = formatIsoDate(d);
+            loadWeekly(_weeklyStartDate);
+        }
+
+        async function loadWeekly(startDate) {
+            const container = document.getElementById('weekly-content');
+            const rangeLabel = document.getElementById('weekly-range-label');
+            container.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
+
+            if (!startDate) {
+                // Default to current week Monday
+                const today = new Date();
+                startDate = _getMondayOf(formatIsoDate(today));
+            }
+            _weeklyStartDate = startDate;
+
+            try {
+                const response = await fetch(`${API_BASE}/log/weekly?start_date=${encodeURIComponent(startDate)}`);
+                const data = await response.json();
+
+                // Update range label
+                const startLabel = formatDate(data.start_date);
+                const endLabel = formatDate(data.end_date);
+                rangeLabel.textContent = `${startLabel} – ${endLabel}`;
+
+                // Compute max calories for chart scaling
+                const calValues = data.days.map(d => d.total_calories || 0);
+                const maxCal = Math.max(...calValues, 1);
+                const todayStr = formatIsoDate(new Date());
+
+                // --- Bar chart ---
+                const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+                let chartHtml = '<div class="weekly-chart">';
+                data.days.forEach((day, i) => {
+                    const cal = day.total_calories || 0;
+                    const pct = cal > 0 ? Math.max(4, Math.round((cal / maxCal) * 100)) : 0;
+                    const isToday = day.date === todayStr;
+                    const barClass = cal === 0 ? 'empty' : (isToday ? 'today' : '');
+                    const calLabel = cal > 0 ? `${cal}` : '';
+                    chartHtml += `
+                        <div class="weekly-bar-col">
+                            <div class="weekly-bar-cal">${calLabel}</div>
+                            <div class="weekly-bar ${barClass}" style="height:${pct}%"></div>
+                            <div class="weekly-bar-label${isToday ? '" style="color:#ffd59f' : ''}">${DAY_LABELS[i]}</div>
+                        </div>`;
+                });
+                chartHtml += '</div>';
+
+                // --- Per-day table ---
+                let tableHtml = `
+                    <table class="weekly-stats-table">
+                        <thead><tr>
+                            <th>Date</th><th>Calories</th><th>Protein</th><th>Carbs</th><th>Fat</th><th>Items</th>
+                        </tr></thead><tbody>`;
+                data.days.forEach(day => {
+                    const isToday = day.date === todayStr;
+                    const rowClass = isToday ? ' class="today-row"' : '';
+                    const cal = day.total_calories != null ? day.total_calories : '—';
+                    const prot = day.total_protein_g != null ? `${formatNutrient(day.total_protein_g)}g` : '—';
+                    const carb = day.total_carbs_g != null ? `${formatNutrient(day.total_carbs_g)}g` : '—';
+                    const fat = day.total_fat_g != null ? `${formatNutrient(day.total_fat_g)}g` : '—';
+                    const count = day.entry_count || 0;
+                    const calDisplay = cal !== '—' ? `${cal}` : '—';
+                    tableHtml += `<tr${rowClass}>
+                        <td>${formatDate(day.date)}</td>
+                        <td class="cal-cell">${calDisplay}</td>
+                        <td>${prot}</td><td>${carb}</td><td>${fat}</td>
+                        <td>${count > 0 ? count : '—'}</td>
+                    </tr>`;
+                });
+                tableHtml += '</tbody></table>';
+
+                // --- Totals/averages grid ---
+                const t = data.totals;
+                const a = data.averages;
+                const n = data.active_days;
+                const avgNote = n > 0 ? `avg over ${n} day${n !== 1 ? 's' : ''}` : 'no data';
+
+                let totalsHtml = `<div class="weekly-totals-grid">
+                    <div class="weekly-stat-card">
+                        <div class="stat-label">Total Calories</div>
+                        <div class="stat-value">${t.calories || 0}</div>
+                        <div class="stat-avg">${a.calories != null ? `${a.calories}/day` : ''} ${avgNote}</div>
+                    </div>
+                    <div class="weekly-stat-card">
+                        <div class="stat-label">Protein</div>
+                        <div class="stat-value">${formatNutrient(t.protein_g)}g</div>
+                        <div class="stat-avg">${a.protein_g != null ? `${formatNutrient(a.protein_g)}g/day` : ''}</div>
+                    </div>
+                    <div class="weekly-stat-card">
+                        <div class="stat-label">Carbs</div>
+                        <div class="stat-value">${formatNutrient(t.carbs_g)}g</div>
+                        <div class="stat-avg">${a.carbs_g != null ? `${formatNutrient(a.carbs_g)}g/day` : ''}</div>
+                    </div>
+                    <div class="weekly-stat-card">
+                        <div class="stat-label">Fat</div>
+                        <div class="stat-value">${formatNutrient(t.fat_g)}g</div>
+                        <div class="stat-avg">${a.fat_g != null ? `${formatNutrient(a.fat_g)}g/day` : ''}</div>
+                    </div>
+                </div>`;
+
+                // --- Meal frequency ---
+                const mealFreq = data.meal_frequency || {};
+                const MEAL_ORDER = ['breakfast', 'lunch', 'dinner', 'snack'];
+                const freqKeys = [...MEAL_ORDER.filter(m => mealFreq[m]), ...Object.keys(mealFreq).filter(m => !MEAL_ORDER.includes(m))];
+                let mealHtml = '';
+                if (freqKeys.length > 0) {
+                    mealHtml = '<div class="meal-freq-row">' + freqKeys.map(m =>
+                        `<div class="meal-freq-chip"><span class="meal-badge ${m}">${m}</span><span class="chip-count">${mealFreq[m]}x</span></div>`
+                    ).join('') + '</div>';
+                }
+
+                container.innerHTML = chartHtml + tableHtml + totalsHtml + mealHtml;
+
+            } catch (error) {
+                container.innerHTML = `<div class="empty-state"><p>Error loading weekly summary</p></div>`;
+            }
+        }
+
         // Load 7-day summary
         async function loadSummary() {
             const container = document.getElementById('summary-content');
@@ -1410,12 +1735,17 @@
                 data.summary.forEach(day => {
                     const calories = day.total_calories || '—';
                     const caloriesText = calories !== '—' ? `${calories} cal` : 'No data';
-                    
+                    const hasMacros = day.total_protein_g || day.total_carbs_g || day.total_fat_g;
+                    const macroLine = hasMacros
+                        ? `<div class="summary-macros">P ${formatNutrient(day.total_protein_g)}g · C ${formatNutrient(day.total_carbs_g)}g · F ${formatNutrient(day.total_fat_g)}g</div>`
+                        : '';
+
                     html += `
                         <div class="summary-day" onclick="loadDateDetails('${day.date}')">
                             <div class="summary-date">${formatDate(day.date)}</div>
                             <div class="summary-stats">
                                 <div class="summary-calories">${caloriesText}</div>
+                                ${macroLine}
                                 <div class="summary-count">${day.entry_count} entries</div>
                             </div>
                         </div>

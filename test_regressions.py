@@ -191,6 +191,94 @@ class FoodLogRegressionTests(unittest.TestCase):
         self.assertIn("11–13", source, "Prompt should contain lunch hour range 11–13")
         self.assertIn("17–21", source, "Prompt should contain dinner hour range 17–21")
 
+    def test_weekly_endpoint_returns_7_days(self) -> None:
+        """GET /log/weekly returns exactly 7 day slots with correct structure."""
+        client = TestClient(main.app)
+        response = client.get("/log/weekly?start_date=2026-04-28")
+        self.assertEqual(response.status_code, 200)
+
+        data = response.json()
+        self.assertEqual(data["start_date"], "2026-04-28")
+        self.assertEqual(data["end_date"], "2026-05-04")
+        self.assertEqual(len(data["days"]), 7)
+        self.assertIn("totals", data)
+        self.assertIn("averages", data)
+        self.assertIn("meal_frequency", data)
+
+    def test_weekly_endpoint_computes_totals(self) -> None:
+        """Weekly totals and averages are correctly computed from logged entries."""
+        # Insert entries on two different days within a week
+        database.insert_resolved_entry(
+            parsed_id=database.insert_parsed_entry(
+                database.insert_raw_entry("breakfast"),
+                {"confidence": "high", "intents": []}, "high"
+            ),
+            food_name="Oatmeal",
+            calories=300,
+            protein_g=10,
+            carbs_g=50,
+            fat_g=5,
+            meal="breakfast",
+            logged_date="2026-04-28",
+            source="manual",
+            confidence_level="manual",
+        )
+        database.insert_resolved_entry(
+            parsed_id=database.insert_parsed_entry(
+                database.insert_raw_entry("lunch"),
+                {"confidence": "high", "intents": []}, "high"
+            ),
+            food_name="Chicken Salad",
+            calories=500,
+            protein_g=40,
+            carbs_g=20,
+            fat_g=15,
+            meal="lunch",
+            logged_date="2026-04-29",
+            source="manual",
+            confidence_level="manual",
+        )
+
+        client = TestClient(main.app)
+        response = client.get("/log/weekly?start_date=2026-04-28")
+        self.assertEqual(response.status_code, 200)
+
+        data = response.json()
+        self.assertEqual(data["totals"]["calories"], 800)
+        self.assertEqual(data["active_days"], 2)
+        self.assertEqual(data["averages"]["calories"], 400.0)
+        self.assertEqual(data["meal_frequency"].get("breakfast"), 1)
+        self.assertEqual(data["meal_frequency"].get("lunch"), 1)
+
+    def test_summary_endpoint_includes_macro_totals(self) -> None:
+        """GET /log/summary rows include total_protein_g, total_carbs_g, total_fat_g."""
+        today = date.today().isoformat()
+        database.insert_resolved_entry(
+            parsed_id=database.insert_parsed_entry(
+                database.insert_raw_entry("test"),
+                {"confidence": "high", "intents": []}, "high"
+            ),
+            food_name="Test Food",
+            calories=200,
+            protein_g=15,
+            carbs_g=25,
+            fat_g=8,
+            meal=None,
+            logged_date=today,
+            source="manual",
+            confidence_level="manual",
+        )
+
+        client = TestClient(main.app)
+        response = client.get("/log/summary")
+        self.assertEqual(response.status_code, 200)
+
+        data = response.json()
+        day = next(d for d in data["summary"] if d["date"] == today)
+        self.assertEqual(day["total_protein_g"], 15)
+        self.assertEqual(day["total_carbs_g"], 25)
+        self.assertEqual(day["total_fat_g"], 8)
+
 
 if __name__ == "__main__":
     unittest.main()
