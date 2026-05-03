@@ -1357,6 +1357,11 @@
             return `${year}-${month}-${day}`;
         }
 
+        function parseLocalDate(dateStr) {
+            // Avoid UTC parsing of YYYY-MM-DD, which can shift labels by one day.
+            return new Date(`${dateStr}T12:00:00`);
+        }
+
         function formatEntryTime(timestamp) {
             if (!timestamp) {
                 return '';
@@ -2305,7 +2310,7 @@
 
         // Helper: Format date nicely
         function formatDate(dateStr) {
-            const date = new Date(dateStr);
+            const date = parseLocalDate(dateStr);
             const today = new Date();
             const yesterday = new Date(today);
             yesterday.setDate(yesterday.getDate() - 1);
