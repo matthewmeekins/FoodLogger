@@ -130,13 +130,28 @@ curl http://localhost:8000/log/today
 - Return/Enter submits main log input (Shift+Enter keeps newline)
 - Processing, success, and error states are shown in status messages
 - **Log Food tab:** text input + favorites section (search bar + quick-log cards)
-- **Today tab:** newest entries first, grouped by meal, with edit/delete/re-log actions
-- **Weekly tab:** 7-day bar chart and macro summary table
+- **Daily tab:** entries newest-first; Qty −/+ scaling, edit ✎, delete ✕, and favorite ★ per entry
+- **Weekly tab:** 7-day bar chart and macro summary table; same entry controls as Daily
 - **Summary tab:** calendar-based date range with macro totals
-- Entry macro line shows Protein/Carbs/Fat with capped decimal formatting
+- Entry macro line shows Protein/Carbs/Fat
 - Entry timestamps displayed in local-time format
-- Each entry shows OpenAI's component breakdown reasoning
-- ★ button on each entry or meal group saves as a favorite
+- ★ button on any entry saves it as a favorite for quick re-logging
+
+## Testing
+## Remote Access
+
+The app uses [Tailscale](https://tailscale.com) for private remote access from iPhone.
+
+**Setup (5 minutes):**
+1. Install Tailscale on Mac: `brew install tailscale && sudo tailscale up`
+2. Install the Tailscale app on iPhone and sign in with the same account
+3. Your Mac gets a persistent private IP (`100.x.x.x`) and a machine DNS name (e.g. `your-machine.your-tailnet.ts.net`)
+4. Start the app bound to all interfaces: `uvicorn main:app --host 0.0.0.0 --port 8000`
+5. Access from iPhone at `http://your-machine.your-tailnet.ts.net:8000`
+
+**Siri Shortcut:** See `APPLE_SHORTCUT_GUIDE.md` for step-by-step instructions to create a voice-activated logging shortcut.
+
+**Security:** Tailscale uses WireGuard encryption. Only devices in your tailnet can reach the server — no router config or public exposure needed.
 
 ## Testing
 
