@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 
 import database
 import llm
+import digest
 from models import UpdateEntryRequest, FavoriteCreateRequest
 
 
@@ -444,6 +445,49 @@ def log_favorite(fav_id: int) -> Dict[str, Any]:
         "entry_ids": new_ids,
         "items_logged": len(new_ids),
     }
+
+
+@app.post("/digest/send-daily")
+async def send_daily_digest(request: Request) -> Dict[str, Any]:
+    """
+    Build and send today's calorie and macro summary to Telegram.
+    Accepts optional JSON body: {"date": "YYYY-MM-DD"} to send for a specific date.
+    """
+    _enforce_rate_limit(request)
+    body: Dict[str, Any] = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    target_date = body.get("date") if body else None
+
+    try:
+        message = digest.build_daily_message(target_date)
+        digest.send_telegram(message)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    return {"status": "sent", "date": target_date or __import__("datetime").date.today().isoformat()}
+
+
+@app.post("/digest/send-weekly")
+async def send_weekly_digest(request: Request) -> Dict[str, Any]:
+    """
+    Build and send a 7-day summary to Telegram.
+    Accepts optional query param: ?start_date=YYYY-MM-DD (defaults to 7 days ago).
+    """
+    _enforce_rate_limit(request)
+    start_date = request.query_params.get("start_date")
+
+    try:
+        message = digest.build_weekly_message(start_date)
+        digest.send_telegram(message)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    from datetime import date as _date, timedelta as _td
+    resolved_start = start_date or (_date.today() - _td(days=6)).isoformat()
+    return {"status": "sent", "start_date": resolved_start}
 
 
 @app.get("/")

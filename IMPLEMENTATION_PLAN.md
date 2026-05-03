@@ -260,66 +260,76 @@
 
 ---
 
-## Phase 5: Email Digests
+## Phase 5: Telegram Digests
 
-**Status:** ⏸️ Waiting
+**Status:** ✅ COMPLETED
 
 **What it does:**
-- Daily/weekly summary via email
-- Includes calories, macros, meal breakdown
-- Optional scheduling via cron/launchd
+- Daily and weekly summary pushed to your Telegram via a bot
+- Formatted Markdown message with calorie bar, macros, meal breakdown
+- Triggered manually via endpoints or scheduled via launchd
 
 **Scope:**
 
-**Email Implementation:**
-1. Use Python `smtplib` with Gmail SMTP
-2. New module: `digest.py` with email templates
-3. Endpoints: 
-   - `POST /digest/send-daily` (trigger daily digest)
-   - `POST /digest/send-weekly` (trigger weekly digest)
+**Implementation:**
+1. New module: `digest.py` with Telegram send helper and message formatters
+2. Uses `httpx` (already a dependency) to POST to Telegram Bot API — no new packages needed
+3. Endpoints:
+   - `POST /digest/send-daily` — send today's summary to Telegram
+   - `POST /digest/send-weekly` — send last 7-day summary to Telegram
 4. Config in .env:
-   - `DIGEST_EMAIL` (recipient)
-   - `GMAIL_USER` (sender)
-   - `GMAIL_APP_PASSWORD` (app-specific password, not main password)
-5. Email template: HTML with summary stats, macro breakdown
+   - `TELEGRAM_BOT_TOKEN` — from BotFather
+   - `TELEGRAM_CHAT_ID` — your personal chat ID with the bot
 
-**Daily Digest Content:**
-- Date
-- Total calories
-- Macro breakdown (protein/carbs/fat)
-- Meal-by-meal list
-- Top 3 highest calorie items
+**Daily Digest Message:**
+```
+📊 Food Log — May 2, 2026
+━━━━━━━━━━━━━━━━━━━━
+🔥 Calories: 1,840 / day
+█████████░░  (target 2,000)
 
-**Weekly Digest Content:**
-- Date range
-- Total calories for week
-- Average calories per day
-- Macro totals and averages
-- Daily breakdown chart (ASCII or link to web view)
-- Most logged foods
+🥩 Protein:  112g
+🍞 Carbs:    210g
+🧈 Fat:       58g
+
+🍳 Breakfast  — 420 cal
+🥗 Lunch      — 680 cal
+🍽 Dinner     — 640 cal
+🍎 Snack      — 100 cal
+```
+
+**Weekly Digest Message:**
+```
+📅 Week of Apr 27 – May 2
+━━━━━━━━━━━━━━━━━━━━
+Total: 11,240 cal  |  Avg: 1,873/day
+
+Mon ████████  1,920
+Tue ███████   1,800
+Wed ████████  1,950
+Thu ███████░  1,740
+Fri ████████  1,890
+Sat ███████   1,720 (partial)
+Sun —         (no entries)
+
+Avg macros/day: 108g P · 205g C · 55g F
+```
 
 **Scheduling (Optional):**
-- macOS: `launchd` plist for daily 8pm, weekly Sunday 8pm
-- Triggers digest endpoints automatically
-- Include setup script
+- macOS `launchd` plist: daily at 9pm, weekly Sunday at 9pm
+- Calls `POST /digest/send-daily` and `POST /digest/send-weekly` via curl
 
 **Testing:**
-- Trigger daily digest manually → receive email
-- Trigger weekly digest manually → receive email
-- Verify email formatting and content accuracy
-- Test with empty days (no entries)
+- Trigger daily digest manually → message appears in Telegram
+- Trigger weekly digest manually → message appears in Telegram
+- Test with empty day → graceful "No entries logged today" message
 
-**Push Notification Platform (Deferred):**
-- Revisit options: Apple Push (via Shortcuts), Telegram Bot, Discord Webhook
-- Decision needed before implementation
-
-**Git commit:** `"feat: email digest for daily/weekly summaries"`
+**Git commit:** `"feat: Telegram digest for daily/weekly summaries"`
 
 **Git tag:** `phase-5-digests`
 
 **Documentation updates:**
-- README.md (digest setup and endpoints)
-- New file: DIGEST_SETUP.md (Gmail app password instructions)
+- README.md (digest endpoints and Telegram setup)
 
 **Estimated time:** 1 hour
 
@@ -334,7 +344,7 @@
 | 2 | Meal categorization | ⏸️ Waiting | 30m |
 | 3 | Weekly summaries | ⏸️ Waiting | 1h |
 | 4 | Favorites | ⏸️ Waiting | 1.5h |
-| 5 | Email digests | ⏸️ Waiting | 1h |
+| 5 | Telegram digests | ✅ Done | 1h |
 | **Total** | | | **~6-7 hours** |
 
 ---
