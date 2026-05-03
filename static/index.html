@@ -17,8 +17,7 @@
 
         <div class="tabs">
             <button class="tab active" onclick="switchTab('log', this)">Log Food</button>
-            <button class="tab" onclick="switchTab('today', this)">Today</button>
-            <button class="tab" onclick="switchTab('summary', this)">Summary</button>
+            <button class="tab" onclick="switchTab('daily', this)">Daily</button>
             <button class="tab" onclick="switchTab('weekly', this)">Weekly</button>
         </div>
 
@@ -59,10 +58,15 @@
             </div>
         </div>
 
-        <!-- Today Tab -->
-        <div id="today-tab" class="tab-content">
+        <!-- Daily Tab -->
+        <div id="daily-tab" class="tab-content">
             <div class="card">
-                <h2 class="section-title">Today's Entries</h2>
+                <h2 class="section-title">Daily Entries</h2>
+                <div class="daily-nav date-nav">
+                    <button class="button secondary-btn" onclick="navigateDaily(-1)">&#8592; Prev</button>
+                    <input type="date" id="daily-date-picker" class="nav-date-picker" onchange="onDailyDateChange(this.value)" onclick="openDatePicker('daily-date-picker')" onfocus="openDatePicker('daily-date-picker')" onkeydown="return false" onpaste="return false" />
+                    <button class="button secondary-btn" onclick="navigateDaily(1)">Next &#8594;</button>
+                </div>
                 <div class="meal-filter-bar" id="meal-filter-bar">
                     <button class="meal-filter-btn active" data-meal="all" onclick="setMealFilter('all')">All</button>
                     <button class="meal-filter-btn breakfast" data-meal="breakfast" onclick="setMealFilter('breakfast')">Breakfast</button>
@@ -70,7 +74,7 @@
                     <button class="meal-filter-btn dinner" data-meal="dinner" onclick="setMealFilter('dinner')">Dinner</button>
                     <button class="meal-filter-btn snack" data-meal="snack" onclick="setMealFilter('snack')">Snack</button>
                 </div>
-                <div id="today-entries">
+                <div id="daily-entries">
                     <div class="empty-state">
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
@@ -78,39 +82,12 @@
                         <p>No entries yet today</p>
                     </div>
                 </div>
-                <div id="today-total" style="display: none;">
+                <div id="daily-total" style="display: none;">
                     <div class="total-section">
                         <span class="total-label">Total Calories</span>
-                        <span class="total-value" id="total-calories">0</span>
+                        <span class="total-value" id="daily-total-calories">0</span>
                     </div>
                 </div>
-            </div>
-        </div>
-
-        <!-- Summary Tab -->
-        <div id="summary-tab" class="tab-content">
-            <div class="card">
-                <h2 class="section-title">7-Day Summary</h2>
-                <div class="range-controls">
-                    <div>
-                        <label for="summary-start">Start</label>
-                        <input type="date" id="summary-start" />
-                    </div>
-                    <div>
-                        <label for="summary-end">End</label>
-                        <input type="date" id="summary-end" />
-                    </div>
-                    <button class="button" onclick="applySummaryRange()">Apply</button>
-                </div>
-                <div id="summary-content">
-                    <div class="empty-state">
-                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                        </svg>
-                        <p>No data available</p>
-                    </div>
-                </div>
-                <div id="summary-date-details" class="date-details" style="display: none;"></div>
             </div>
         </div>
 
@@ -118,9 +95,9 @@
         <div id="weekly-tab" class="tab-content">
             <div class="card">
                 <h2 class="section-title">Weekly Summary</h2>
-                <div class="weekly-nav">
+                <div class="weekly-nav date-nav">
                     <button class="button secondary-btn" onclick="navigateWeek(-1)">&#8592; Prev</button>
-                    <span id="weekly-range-label" class="weekly-range-label"></span>
+                    <input type="date" id="weekly-date-picker" class="nav-date-picker" onchange="onWeeklyDateChange(this.value)" onclick="openDatePicker('weekly-date-picker')" onfocus="openDatePicker('weekly-date-picker')" onkeydown="return false" onpaste="return false" />
                     <button class="button secondary-btn" onclick="navigateWeek(1)">Next &#8594;</button>
                 </div>
                 <div id="weekly-content">

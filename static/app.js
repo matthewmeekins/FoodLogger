@@ -1,6 +1,8 @@
 // Get the API base URL (works for both localhost and network access)
         const API_BASE = window.location.origin;
-        let selectedSummaryDate = null;
+    let _selectedDailyDate = formatIsoDate(new Date());
+    let _weeklyStartDate = null;
+    const _weeklyDayEntryCache = {};
 
         // Switch between tabs
         function switchTab(tabName, tabButton = null) {
@@ -16,10 +18,8 @@
             document.getElementById(`${tabName}-tab`).classList.add('active');
 
             // Load data for the tab
-            if (tabName === 'today') {
+            if (tabName === 'daily') {
                 loadTodayEntries();
-            } else if (tabName === 'summary') {
-                loadSummary();
             } else if (tabName === 'weekly') {
                 loadWeekly();
             } else if (tabName === 'log') {
@@ -67,19 +67,61 @@
             if (!Number.isFinite(quantity) || quantity <= 0) {
                 return '';
             }
-            const unit = (entry.quantity_unit || '').trim();
-            return `Qty: ${formatNutrient(quantity)}${unit ? ` ${unit}` : ''}`;
+            return `Qty: ${Math.round(quantity)}`;
         }
 
-        function initializeSummaryDateRange() {
-            const endInput = document.getElementById('summary-end');
-            const startInput = document.getElementById('summary-start');
-            const today = new Date();
-            const weekAgo = new Date();
-            weekAgo.setDate(today.getDate() - 6);
+        function renderEntryActions(entryId, quantity, includeAddToToday = false) {
+            const addToToday = includeAddToToday
+                ? `<button class="add-today-btn" onclick="addToToday(${entryId}); event.stopPropagation();">Add to Today</button>`
+                : '';
 
-            endInput.value = formatIsoDate(today);
-            startInput.value = formatIsoDate(weekAgo);
+            return `
+                <span class="quantity-controls"><button class="qty-btn" onclick="adjustQuantity(${entryId}, -1, ${quantity}); event.stopPropagation();">-</button><button class="qty-btn" onclick="adjustQuantity(${entryId}, 1, ${quantity}); event.stopPropagation();">+</button></span>
+                ${addToToday}
+                <button class="icon-btn edit-icon-btn" title="Edit" aria-label="Edit" onclick="openEditModal(${entryId})">✎</button>
+                <button class="icon-btn delete-icon-btn" title="Delete" aria-label="Delete" onclick="deleteEntry(${entryId})">🗑</button>
+            `;
+        }
+
+        function _syncDailyDatePicker() {
+            const picker = document.getElementById('daily-date-picker');
+            if (picker) {
+                picker.value = _selectedDailyDate;
+            }
+        }
+
+        function navigateDaily(direction) {
+            const d = parseLocalDate(_selectedDailyDate);
+            d.setDate(d.getDate() + direction);
+            _selectedDailyDate = formatIsoDate(d);
+            loadTodayEntries();
+        }
+
+        function onDailyDateChange(dateStr) {
+            if (!dateStr) {
+                return;
+            }
+            _selectedDailyDate = dateStr;
+            loadTodayEntries();
+        }
+
+        function onWeeklyDateChange(dateStr) {
+            if (!dateStr) {
+                return;
+            }
+            loadWeekly(_getMondayOf(dateStr));
+        }
+
+        function openDatePicker(inputId) {
+            const input = document.getElementById(inputId);
+            if (!input) {
+                return;
+            }
+            if (typeof input.showPicker === 'function') {
+                input.showPicker();
+                return;
+            }
+            input.focus();
         }
 
         function setStatus(element, message, type = null) {
@@ -198,49 +240,34 @@
         }
 
         function _buildEntryHtml(entry) {
-            const mealClass = entry.meal ? entry.meal.toLowerCase() : '';
-            const mealBadge = entry.meal ? `<span class="meal-badge ${mealClass}">${entry.meal}</span>` : '';
-            const calories = entry.calories ? `<span class="calories">${entry.calories} cal</span>` : '';
+            const calories = entry.calories ? `${entry.calories} cal` : '—';
             const quantityLabel = formatQuantityLabel(entry);
             const quantity = Number(entry.quantity_value) || 1;
-            const quantityMarkup = quantityLabel ? `<span class="quantity-label">${quantityLabel}</span>` : '';
-            const quantityControls = `<span class="quantity-controls"><button class="qty-btn" onclick="adjustQuantity(${entry.id}, -1, ${quantity}); event.stopPropagation();">-</button><button class="qty-btn" onclick="adjustQuantity(${entry.id}, 1, ${quantity}); event.stopPropagation();">+</button></span>`;
-            const confidence = entry.confidence_level ? `<span class="confidence ${entry.confidence_level}">${entry.confidence_level}</span>` : '';
-            const source = entry.source ? `<span class="source">${entry.source}</span>` : '';
+            const quantityMarkup = quantityLabel ? `<div class="quantity-label">${quantityLabel}</div>` : '';
             const entryTime = formatEntryTime(entry.created_at);
-            const timeLine = entryTime ? `<div class="entry-time">${entryTime}</div>` : '';
+            const foodLabel = entryTime ? `${entry.food_name} · ${entryTime}` : entry.food_name;
             const macros = entry.protein_g || entry.carbs_g || entry.fat_g ?
-                `<div class="macros">Macros: Protein ${formatNutrient(entry.protein_g)}g | Carbs ${formatNutrient(entry.carbs_g)}g | Fat ${formatNutrient(entry.fat_g)}g</div>` : '';
-            const assumptions = entry.assumptions && entry.assumptions.length > 0 ?
-                `<div class="assumptions-toggle" onclick="toggleAssumptions(this)">Why this estimate? ▼</div>
-                 <div class="assumptions-panel" style="display: none;">
-                     <ul>${entry.assumptions.map(a => `<li>${a}</li>`).join('')}</ul>
-                 </div>` : '';
+                `<div class="daily-entry-macros">P ${formatNutrient(entry.protein_g)}g · C ${formatNutrient(entry.carbs_g)}g · F ${formatNutrient(entry.fat_g)}g</div>` : '';
 
             return `
-                <div class="food-item">
-                    <div class="food-main">
-                        <div class="food-details" onclick="toggleEntryTrace(${entry.id})">
-                            <div class="food-name">
-                                ${entry.food_name}
-                                ${mealBadge}
-                                ${confidence}
-                                ${source}
-                            </div>
-                            <div class="food-meta">
-                                ${timeLine}
-                                ${calories}
-                                ${quantityMarkup}
-                                ${macros}
-                                ${assumptions}
-                            </div>
-                            <div class="trace-toggle" id="trace-toggle-${entry.id}">Details ▼</div>
+                <div class="weekly-entry-card">
+                    <div class="weekly-entry-top">
+                        <div class="detail-food">${foodLabel}</div>
+                        <div class="detail-calories">${calories}</div>
+                    </div>
+                    ${macros}
+                    <div class="weekly-entry-actions-bottom">
+                        <div class="entry-qty-left">
+                            ${quantityMarkup}
+                            <span class="quantity-controls">
+                                <button class="qty-btn" onclick="adjustQuantity(${entry.id}, -1, ${quantity}); event.stopPropagation();">-</button>
+                                <button class="qty-btn" onclick="adjustQuantity(${entry.id}, 1, ${quantity}); event.stopPropagation();">+</button>
+                            </span>
                         </div>
-                        <div class="food-item-info">
-                            ${quantityControls}
-                            <button class="fav-btn" onclick="saveEntryAsFavorite(${entry.id}); event.stopPropagation();" title="Save as favorite">&#9733;</button>
-                            <button class="edit-btn" onclick="openEditModal(${entry.id})">Edit</button>
-                            <button class="delete-btn" onclick="deleteEntry(${entry.id})">Delete</button>
+                        <div class="entry-icon-btns">
+                            <button class="icon-btn edit-icon-btn" title="Edit" aria-label="Edit" onclick="openEditModal(${entry.id})">✎</button>
+                            <button class="icon-btn delete-icon-btn" title="Delete" aria-label="Delete" onclick="deleteEntry(${entry.id})">✕</button>
+                            <button class="icon-btn fav-icon-btn" onclick="saveEntryAsFavorite(${entry.id}); event.stopPropagation();" title="Save as favorite">&#9733;</button>
                         </div>
                     </div>
                 </div>
@@ -249,8 +276,8 @@
         }
 
         function renderTodayEntries() {
-            const container = document.getElementById('today-entries');
-            const totalSection = document.getElementById('today-total');
+            const container = document.getElementById('daily-entries');
+            const totalSection = document.getElementById('daily-total');
 
             const MEAL_ORDER = ['breakfast', 'lunch', 'dinner', 'snack'];
 
@@ -271,7 +298,7 @@
                             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
                             </svg>
-                            <p>No entries yet today</p>
+                            <p>No entries for this date</p>
                         </div>`;
                     totalSection.style.display = 'none';
                     return;
@@ -295,7 +322,7 @@
                 if (filtered.length === 0) {
                     container.innerHTML = `
                         <div class="empty-state">
-                            <p>No ${_activeMealFilter} entries today</p>
+                            <p>No ${_activeMealFilter} entries for this date</p>
                         </div>`;
                     totalSection.style.display = 'none';
                     return;
@@ -308,7 +335,7 @@
                 // Show filtered calorie total
                 const filteredCals = filtered.reduce((sum, e) => sum + (e.calories || 0), 0);
                 if (filteredCals > 0) {
-                    document.getElementById('total-calories').textContent = filteredCals;
+                    document.getElementById('daily-total-calories').textContent = filteredCals;
                     totalSection.style.display = 'block';
                 } else {
                     totalSection.style.display = 'none';
@@ -317,7 +344,7 @@
             }
 
             if (_todayTotalCalories > 0) {
-                document.getElementById('total-calories').textContent = _todayTotalCalories;
+                document.getElementById('daily-total-calories').textContent = _todayTotalCalories;
                 totalSection.style.display = 'block';
             } else {
                 totalSection.style.display = 'none';
@@ -372,8 +399,8 @@
                             <div class="fav-card-meta">${meta}</div>
                         </div>
                         <div class="fav-card-actions">
-                            <button class="fav-log-btn" onclick="logFavorite(${fav.id}, '${fav.name.replace(/'/g, "\\'")}')">Log</button>
-                            <button class="fav-del-btn" onclick="deleteFavorite(${fav.id}, event)">✕</button>
+                            <button class="add-today-btn" onclick="logFavorite(${fav.id}, '${fav.name.replace(/'/g, "\\'")}')">Log</button>
+                            <button class="icon-btn delete-icon-btn" onclick="deleteFavorite(${fav.id}, event)">✕</button>
                         </div>
                     </div>`;
             }).join('');
@@ -484,11 +511,12 @@
 
         // Load today's entries
         async function loadTodayEntries() {
-            const container = document.getElementById('today-entries');
+            const container = document.getElementById('daily-entries');
             container.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
+            _syncDailyDatePicker();
 
             try {
-                const response = await fetch(`${API_BASE}/log/today`);
+                const response = await fetch(`${API_BASE}/log/date/${encodeURIComponent(_selectedDailyDate)}`);
                 const data = await response.json();
 
                 _todayEntries = data.entries || [];
@@ -547,14 +575,88 @@
         }
 
         // Weekly view state
-        let _weeklyStartDate = null;
-
         function _getMondayOf(dateStr) {
             const d = new Date(dateStr + 'T12:00:00');
             const day = d.getDay(); // 0=Sun, 1=Mon...
             const diff = day === 0 ? -6 : 1 - day;
             d.setDate(d.getDate() + diff);
             return formatIsoDate(d);
+        }
+
+        function _weeklyDayElementId(dateStr) {
+            return `weekly-day-${dateStr.replaceAll('-', '')}`;
+        }
+
+        function _renderWeeklyDayEntries(entries) {
+            if (!entries || entries.length === 0) {
+                return '<div class="weekly-day-empty">No entries for this day.</div>';
+            }
+
+            return entries.map(entry => {
+                const calories = entry.calories ? `${entry.calories} cal` : '—';
+                const quantityLabel = formatQuantityLabel(entry);
+                const quantity = Number(entry.quantity_value) || 1;
+                const quantityMarkup = quantityLabel ? `<div class="quantity-label">${quantityLabel}</div>` : '';
+                const entryTime = formatEntryTime(entry.created_at);
+                const foodLabel = entryTime ? `${entry.food_name} · ${entryTime}` : entry.food_name;
+
+                return `
+                    <div class="weekly-entry-card">
+                        <div class="weekly-entry-top">
+                            <div class="detail-food">${foodLabel}</div>
+                            <div class="detail-calories">${calories}</div>
+                        </div>
+                        <div class="weekly-entry-actions-bottom">
+                            <div class="entry-qty-left">
+                                ${quantityMarkup}
+                                <span class="quantity-controls">
+                                    <button class="qty-btn" onclick="adjustQuantity(${entry.id}, -1, ${quantity}); event.stopPropagation();">-</button>
+                                    <button class="qty-btn" onclick="adjustQuantity(${entry.id}, 1, ${quantity}); event.stopPropagation();">+</button>
+                                </span>
+                            </div>
+                            <div class="entry-icon-btns">
+                                <button class="add-today-btn" onclick="addToToday(${entry.id}); event.stopPropagation();">Add to Today</button>
+                                <button class="icon-btn edit-icon-btn" title="Edit" aria-label="Edit" onclick="openEditModal(${entry.id})">✎</button>
+                                <button class="icon-btn delete-icon-btn" title="Delete" aria-label="Delete" onclick="deleteEntry(${entry.id})">✕</button>
+                                <button class="icon-btn fav-icon-btn" onclick="saveEntryAsFavorite(${entry.id}); event.stopPropagation();" title="Save as favorite">&#9733;</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function toggleWeeklyDay(dateStr) {
+            const body = document.getElementById(_weeklyDayElementId(dateStr));
+            if (!body) {
+                return;
+            }
+
+            const isOpen = body.classList.contains('open');
+            document.querySelectorAll('.weekly-day-body.open').forEach(panel => {
+                panel.classList.remove('open');
+            });
+            if (isOpen) {
+                return;
+            }
+
+            body.classList.add('open');
+            if (_weeklyDayEntryCache[dateStr]) {
+                body.innerHTML = _renderWeeklyDayEntries(_weeklyDayEntryCache[dateStr]);
+                return;
+            }
+
+            body.innerHTML = '<div class="weekly-day-empty">Loading entries...</div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/log/date/${encodeURIComponent(dateStr)}`);
+                const data = await response.json();
+                const entries = data.entries || [];
+                _weeklyDayEntryCache[dateStr] = entries;
+                body.innerHTML = _renderWeeklyDayEntries(entries);
+            } catch (error) {
+                body.innerHTML = '<div class="weekly-day-empty">Unable to load entries.</div>';
+            }
         }
 
         function navigateWeek(direction) {
@@ -567,7 +669,7 @@
 
         async function loadWeekly(startDate) {
             const container = document.getElementById('weekly-content');
-            const rangeLabel = document.getElementById('weekly-range-label');
+            const weeklyPicker = document.getElementById('weekly-date-picker');
             container.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
 
             if (!startDate) {
@@ -581,57 +683,16 @@
                 const response = await fetch(`${API_BASE}/log/weekly?start_date=${encodeURIComponent(startDate)}`);
                 const data = await response.json();
 
-                // Update range label
-                const startLabel = formatDate(data.start_date);
-                const endLabel = formatDate(data.end_date);
-                rangeLabel.textContent = `${startLabel} – ${endLabel}`;
+                // Reset cache each week and sync the picker to week start.
+                Object.keys(_weeklyDayEntryCache).forEach(k => delete _weeklyDayEntryCache[k]);
+                if (weeklyPicker) {
+                    weeklyPicker.value = data.start_date;
+                }
 
                 // Compute max calories for chart scaling
                 const calValues = data.days.map(d => d.total_calories || 0);
                 const maxCal = Math.max(...calValues, 1);
                 const todayStr = formatIsoDate(new Date());
-
-                // --- Bar chart ---
-                const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-                let chartHtml = '<div class="weekly-chart">';
-                data.days.forEach((day, i) => {
-                    const cal = day.total_calories || 0;
-                    const pct = cal > 0 ? Math.max(4, Math.round((cal / maxCal) * 100)) : 0;
-                    const isToday = day.date === todayStr;
-                    const barClass = cal === 0 ? 'empty' : (isToday ? 'today' : '');
-                    const calLabel = cal > 0 ? `${cal}` : '';
-                    chartHtml += `
-                        <div class="weekly-bar-col">
-                            <div class="weekly-bar-cal">${calLabel}</div>
-                            <div class="weekly-bar ${barClass}" style="height:${pct}%"></div>
-                            <div class="weekly-bar-label${isToday ? '" style="color:#ffd59f' : ''}">${DAY_LABELS[i]}</div>
-                        </div>`;
-                });
-                chartHtml += '</div>';
-
-                // --- Per-day table ---
-                let tableHtml = `
-                    <table class="weekly-stats-table">
-                        <thead><tr>
-                            <th>Date</th><th>Calories</th><th>Protein</th><th>Carbs</th><th>Fat</th><th>Items</th>
-                        </tr></thead><tbody>`;
-                data.days.forEach(day => {
-                    const isToday = day.date === todayStr;
-                    const rowClass = isToday ? ' class="today-row"' : '';
-                    const cal = day.total_calories != null ? day.total_calories : '—';
-                    const prot = day.total_protein_g != null ? `${formatNutrient(day.total_protein_g)}g` : '—';
-                    const carb = day.total_carbs_g != null ? `${formatNutrient(day.total_carbs_g)}g` : '—';
-                    const fat = day.total_fat_g != null ? `${formatNutrient(day.total_fat_g)}g` : '—';
-                    const count = day.entry_count || 0;
-                    const calDisplay = cal !== '—' ? `${cal}` : '—';
-                    tableHtml += `<tr${rowClass}>
-                        <td>${formatDate(day.date)}</td>
-                        <td class="cal-cell">${calDisplay}</td>
-                        <td>${prot}</td><td>${carb}</td><td>${fat}</td>
-                        <td>${count > 0 ? count : '—'}</td>
-                    </tr>`;
-                });
-                tableHtml += '</tbody></table>';
 
                 // --- Totals/averages grid ---
                 const t = data.totals;
@@ -639,7 +700,7 @@
                 const n = data.active_days;
                 const avgNote = n > 0 ? `avg over ${n} day${n !== 1 ? 's' : ''}` : 'no data';
 
-                let totalsHtml = `<div class="weekly-totals-grid">
+                const totalsHtml = `<div class="weekly-totals-grid">
                     <div class="weekly-stat-card">
                         <div class="stat-label">Total Calories</div>
                         <div class="stat-value">${t.calories || 0}</div>
@@ -662,137 +723,64 @@
                     </div>
                 </div>`;
 
-                // --- Meal frequency ---
-                const mealFreq = data.meal_frequency || {};
-                const MEAL_ORDER = ['breakfast', 'lunch', 'dinner', 'snack'];
-                const freqKeys = [...MEAL_ORDER.filter(m => mealFreq[m]), ...Object.keys(mealFreq).filter(m => !MEAL_ORDER.includes(m))];
-                let mealHtml = '';
-                if (freqKeys.length > 0) {
-                    mealHtml = '<div class="meal-freq-row">' + freqKeys.map(m =>
-                        `<div class="meal-freq-chip"><span class="meal-badge ${m}">${m}</span><span class="chip-count">${mealFreq[m]}x</span></div>`
-                    ).join('') + '</div>';
-                }
+                // --- Bar chart ---
+                const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+                let chartHtml = '<div class="weekly-chart">';
+                data.days.forEach((day, i) => {
+                    const cal = day.total_calories || 0;
+                    const pct = cal > 0 ? Math.max(4, Math.round((cal / maxCal) * 100)) : 0;
+                    const isToday = day.date === todayStr;
+                    const barClass = cal === 0 ? 'empty' : (isToday ? 'today' : '');
+                    const calLabel = cal > 0 ? `${cal}` : '';
+                    chartHtml += `
+                        <div class="weekly-bar-col">
+                            <div class="weekly-bar-cal">${calLabel}</div>
+                            <div class="weekly-bar ${barClass}" style="height:${pct}%"></div>
+                            <div class="weekly-bar-label${isToday ? '" style="color:#ffd59f' : ''}">${DAY_LABELS[i]}</div>
+                        </div>`;
+                });
+                chartHtml += '</div>';
 
-                container.innerHTML = chartHtml + tableHtml + totalsHtml + mealHtml;
+                // --- Daily disclosure cards ---
+                let disclosureHtml = '<div class="weekly-day-list">';
+                data.days.forEach(day => {
+                    const calories = day.total_calories || 0;
+                    const macroText = `P ${formatNutrient(day.total_protein_g)}g · C ${formatNutrient(day.total_carbs_g)}g · F ${formatNutrient(day.total_fat_g)}g`;
+                    const isToday = day.date === todayStr;
+                    const todayChip = isToday ? '<span class="weekly-today-chip">Today</span>' : '';
+
+                    disclosureHtml += `
+                        <div class="weekly-day-card">
+                            <button class="weekly-day-header" onclick="toggleWeeklyDay('${day.date}')">
+                                <div class="weekly-day-title-wrap">
+                                    <div class="weekly-day-title">${formatDate(day.date)} ${todayChip}</div>
+                                    <div class="weekly-day-subtitle">${day.entry_count || 0} entries</div>
+                                </div>
+                                <div class="weekly-day-stat-wrap">
+                                    <div class="weekly-day-calories">${calories} cal</div>
+                                    <div class="weekly-day-macros">${macroText}</div>
+                                </div>
+                            </button>
+                            <div id="${_weeklyDayElementId(day.date)}" class="weekly-day-body"></div>
+                        </div>
+                    `;
+                });
+                disclosureHtml += '</div>';
+
+                container.innerHTML = totalsHtml + chartHtml + disclosureHtml;
 
             } catch (error) {
                 container.innerHTML = `<div class="empty-state"><p>Error loading weekly summary</p></div>`;
             }
         }
 
-        // Load 7-day summary
-        async function loadSummary() {
-            const container = document.getElementById('summary-content');
-            const startInput = document.getElementById('summary-start');
-            const endInput = document.getElementById('summary-end');
-            
-            container.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
-
-            try {
-                let query = '';
-                if (startInput.value && endInput.value) {
-                    query = `?start_date=${encodeURIComponent(startInput.value)}&end_date=${encodeURIComponent(endInput.value)}`;
-                }
-
-                const response = await fetch(`${API_BASE}/log/summary${query}`);
-                const data = await response.json();
-
-                if (!data.summary || data.summary.length === 0) {
-                    container.innerHTML = `
-                        <div class="empty-state">
-                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                            </svg>
-                            <p>No data available</p>
-                        </div>
-                    `;
-                    return;
-                }
-
-                let html = '';
-                data.summary.forEach(day => {
-                    const calories = day.total_calories || '—';
-                    const caloriesText = calories !== '—' ? `${calories} cal` : 'No data';
-                    const hasMacros = day.total_protein_g || day.total_carbs_g || day.total_fat_g;
-                    const macroLine = hasMacros
-                        ? `<div class="summary-macros">P ${formatNutrient(day.total_protein_g)}g · C ${formatNutrient(day.total_carbs_g)}g · F ${formatNutrient(day.total_fat_g)}g</div>`
-                        : '';
-
-                    html += `
-                        <div class="summary-day" onclick="loadDateDetails('${day.date}')">
-                            <div class="summary-date">${formatDate(day.date)}</div>
-                            <div class="summary-stats">
-                                <div class="summary-calories">${caloriesText}</div>
-                                ${macroLine}
-                                <div class="summary-count">${day.entry_count} entries</div>
-                            </div>
-                        </div>
-                    `;
-                });
-
-                container.innerHTML = html;
-
-            } catch (error) {
-                container.innerHTML = `<div class="empty-state"><p>Error loading summary</p></div>`;
+        function refreshVisibleData() {
+            if (document.getElementById('daily-tab')?.classList.contains('active')) {
+                loadTodayEntries();
             }
-        }
-
-        async function loadDateDetails(dateStr) {
-            const details = document.getElementById('summary-date-details');
-            selectedSummaryDate = dateStr;
-            details.style.display = 'block';
-            details.innerHTML = '<div class="empty-state"><p>Loading date details...</p></div>';
-
-            try {
-                const response = await fetch(`${API_BASE}/log/date/${encodeURIComponent(dateStr)}`);
-                const data = await response.json();
-
-                if (!data.entries || data.entries.length === 0) {
-                    details.innerHTML = `<div class="empty-state"><p>No entries found for ${formatDate(dateStr)}</p></div>`;
-                    return;
-                }
-
-                const rows = data.entries.map(entry => {
-                    const calories = entry.calories ? `${entry.calories} cal` : '—';
-                    const quantityLabel = formatQuantityLabel(entry);
-                    const quantity = Number(entry.quantity_value) || 1;
-                    const quantityMarkup = quantityLabel ? `<div class="quantity-label">${quantityLabel}</div>` : '';
-                    const entryTime = formatEntryTime(entry.created_at);
-                    const foodLabel = entryTime ? `${entry.food_name} · ${entryTime}` : entry.food_name;
-                    return `
-                        <div class="detail-item">
-                            <div>
-                                <div class="detail-food">${foodLabel}</div>
-                                ${quantityMarkup}
-                            </div>
-                            <div class="detail-actions">
-                                <div class="detail-calories">${calories}</div>
-                                <span class="quantity-controls"><button class="qty-btn" onclick="adjustQuantity(${entry.id}, -1, ${quantity}); event.stopPropagation();">-</button><button class="qty-btn" onclick="adjustQuantity(${entry.id}, 1, ${quantity}); event.stopPropagation();">+</button></span>
-                                <button class="add-today-btn" onclick="addToToday(${entry.id}); event.stopPropagation();">Add to Today</button>
-                                <button class="edit-btn" onclick="openEditModal(${entry.id})">Edit</button>
-                                <button class="delete-btn" onclick="deleteEntry(${entry.id})">Delete</button>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-
-                details.innerHTML = `
-                    <h3 class="section-title">${formatDate(dateStr)} Details</h3>
-                    ${rows}
-                    <div class="total-section" style="margin-top: 12px;">
-                        <span class="total-label">Total Calories</span>
-                        <span class="total-value">${data.total_calories}</span>
-                    </div>
-                `;
-            } catch (error) {
-                details.innerHTML = '<div class="empty-state"><p>Error loading date details</p></div>';
+            if (document.getElementById('weekly-tab')?.classList.contains('active')) {
+                loadWeekly(_weeklyStartDate);
             }
-        }
-
-        function applySummaryRange() {
-            const details = document.getElementById('summary-date-details');
-            details.style.display = 'none';
-            loadSummary();
         }
 
         // Delete an entry
@@ -810,12 +798,7 @@
                     throw new Error('Failed to delete entry');
                 }
 
-                // Reload today's entries
-                loadTodayEntries();
-                loadSummary();
-                if (selectedSummaryDate) {
-                    loadDateDetails(selectedSummaryDate);
-                }
+                refreshVisibleData();
 
             } catch (error) {
                 alert(`Error: ${error.message}`);
@@ -835,11 +818,7 @@
                     throw new Error('Failed to update quantity');
                 }
 
-                loadTodayEntries();
-                loadSummary();
-                if (selectedSummaryDate) {
-                    loadDateDetails(selectedSummaryDate);
-                }
+                refreshVisibleData();
             } catch (error) {
                 showStatus(error.message, 'error');
             }
@@ -856,6 +835,9 @@
                 }
 
                 loadTodayEntries();
+                if (document.getElementById('weekly-tab')?.classList.contains('active')) {
+                    loadWeekly(_weeklyStartDate);
+                }
                 showStatus('Entry added to today', 'success');
             } catch (error) {
                 showStatus(error.message, 'error');
@@ -1032,7 +1014,7 @@
             }
         });
 
-        initializeSummaryDateRange();
+        _syncDailyDatePicker();
         loadFavorites();
 
 let currentEditEntryId = null;
@@ -1040,21 +1022,21 @@ let currentEditEntryId = null;
         function openEditModal(entryId) {
             currentEditEntryId = entryId;
             
-            // Fetch current entry data
-            fetch(`${API_BASE}/log/today`)
+            // Fetch current entry data by ID so this works in both Daily and Weekly views.
+            fetch(`${API_BASE}/log/${entryId}/details`)
                 .then(r => r.json())
-                .then(data => {
-                    const entry = data.entries.find(e => e.id === entryId);
-                    if (entry) {
-                        document.getElementById('edit-food-name').value = entry.food_name || '';
-                        document.getElementById('edit-calories').value = entry.calories || '';
-                        document.getElementById('edit-quantity').value = entry.quantity_value || 1;
-                        document.getElementById('edit-meal').value = entry.meal || '';
-                        document.getElementById('edit-protein').value = entry.protein_g || '';
-                        document.getElementById('edit-carbs').value = entry.carbs_g || '';
-                        document.getElementById('edit-fat').value = entry.fat_g || '';
-                        document.getElementById('edit-modal').classList.add('active');
+                .then(entry => {
+                    if (!entry || entry.id !== entryId) {
+                        return;
                     }
+                    document.getElementById('edit-food-name').value = entry.food_name || '';
+                    document.getElementById('edit-calories').value = entry.calories || '';
+                    document.getElementById('edit-quantity').value = entry.quantity_value || 1;
+                    document.getElementById('edit-meal').value = entry.meal || '';
+                    document.getElementById('edit-protein').value = entry.protein_g || '';
+                    document.getElementById('edit-carbs').value = entry.carbs_g || '';
+                    document.getElementById('edit-fat').value = entry.fat_g || '';
+                    document.getElementById('edit-modal').classList.add('active');
                 });
         }
 
@@ -1092,7 +1074,7 @@ let currentEditEntryId = null;
 
                 if (response.ok) {
                     closeEditModal();
-                    loadTodayEntries();
+                    refreshVisibleData();
                     showStatus('Entry updated successfully', 'success');
                 } else {
                     showStatus('Failed to update entry', 'error');

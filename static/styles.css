@@ -9,8 +9,8 @@
         body {
             font-family: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
             background:
-                radial-gradient(1200px 600px at 10% -10%, #20233f 0%, rgba(32, 35, 63, 0) 60%),
-                radial-gradient(1000px 600px at 100% 0%, #17203a 0%, rgba(23, 32, 58, 0) 55%),
+                radial-gradient(1200px 600px at 10% -10%, #20233f 0%, #20233f00 60%),
+                radial-gradient(1000px 600px at 100% 0%, #17203a 0%, #17203a00 55%),
                 #0f1117;
             min-height: 100vh;
             padding: 24px;
@@ -46,7 +46,7 @@
             border-radius: 14px;
             padding: 22px;
             margin-bottom: 20px;
-            box-shadow: 0 20px 35px rgba(3, 6, 12, 0.35);
+            box-shadow: 0 20px 35px #03060c59;
         }
 
         .input-section {
@@ -75,7 +75,7 @@
         textarea:focus {
             outline: none;
             border-color: #5c8dff;
-            box-shadow: 0 0 0 3px rgba(92, 141, 255, 0.15);
+            box-shadow: 0 0 0 3px #5c8dff26;
         }
 
         .button {
@@ -95,7 +95,7 @@
 
         .button:hover {
             transform: translateY(-1px);
-            box-shadow: 0 8px 18px rgba(63, 119, 243, 0.35);
+            box-shadow: 0 8px 18px #3f77f359;
             filter: brightness(1.03);
         }
 
@@ -110,11 +110,11 @@
         }
 
         .section-title {
-            font-size: 1.05rem;
             margin-bottom: 14px;
             color: #f4f6fb;
             font-weight: 600;
             letter-spacing: -0.01em;
+            text-align: center;
         }
 
         .food-item {
@@ -164,82 +164,89 @@
             margin-left: 8px;
         }
 
-        .qty-btn {
-            background: transparent;
-            color: #aeb6ca;
-            border: 1px solid #333a4d;
-            border-radius: 6px;
-            width: 24px;
-            height: 24px;
-            font-size: 0.9rem;
-            font-weight: 700;
-            cursor: pointer;
-            line-height: 1;
-        }
-
-        .qty-btn:hover {
-            border-color: #5c8dff;
-            color: #b7d8ff;
-            background: rgba(92, 141, 255, 0.08);
-        }
-
-        .delete-btn {
-            background: transparent;
-            color: #aeb6ca;
-            border: 1px solid #333a4d;
+        /* ── Unified action button base ── */
+        .qty-btn,
+        .icon-btn,
+        .add-today-btn,
+        .delete-btn,
+        .edit-btn,
+        .fav-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            height: 30px;
             border-radius: 8px;
-            padding: 6px 10px;
-            font-size: 0.78rem;
+            border: 1px solid #2a3a5c;
+            background: transparent;
+            color: #6a8fd4;
+            font-size: 0.82rem;
             font-weight: 600;
             cursor: pointer;
-            transition: border-color 0.2s, color 0.2s, background 0.2s;
             white-space: nowrap;
+            transition: border-color 0.18s, color 0.18s, background 0.18s;
+            font-family: inherit;
         }
 
-        .delete-btn:hover {
-            border-color: #eb5b69;
-            color: #ffd2d7;
-            background: rgba(235, 91, 105, 0.08);
+        /* Square buttons */
+        .qty-btn,
+        .icon-btn {
+            width: 30px;
+            padding: 0;
+            font-size: 0.88rem;
         }
 
-        .edit-btn {
-            background: transparent;
-            color: #aeb6ca;
-            border: 1px solid #333a4d;
-            border-radius: 8px;
-            padding: 6px 10px;
-            font-size: 0.78rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: border-color 0.2s, color 0.2s, background 0.2s;
-            white-space: nowrap;
-            margin-right: 6px;
+        /* Text buttons get horizontal padding */
+        .add-today-btn,
+        .delete-btn,
+        .edit-btn,
+        .fav-btn {
+            width: auto;
+            padding: 0 10px;
         }
 
-        .add-today-btn {
-            background: transparent;
-            color: #aeb6ca;
-            border: 1px solid #333a4d;
-            border-radius: 8px;
-            padding: 6px 10px;
-            font-size: 0.78rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: border-color 0.2s, color 0.2s, background 0.2s;
-            white-space: nowrap;
-            margin-right: 6px;
-        }
-
-        .add-today-btn:hover {
-            border-color: #49c98a;
-            color: #baf6d9;
-            background: rgba(73, 201, 138, 0.1);
-        }
-
+        .qty-btn:hover,
+        .icon-btn:hover,
         .edit-btn:hover {
-            border-color: #5c8dff;
-            color: #b7d8ff;
-            background: rgba(92, 141, 255, 0.08);
+            border-color: #2f77ff;
+            color: #a8ccff;
+            background: transparent;
+        }
+
+        /* Delete — red */
+        .delete-btn,
+        .delete-icon-btn {
+            border-color: #7a1a1a;
+            color: #ff5a5a;
+        }
+        .delete-btn:hover,
+        .delete-icon-btn:hover {
+            border-color: #cc2222;
+            color: #ff8888;
+            background: transparent;
+        }
+
+        /* Favorite — yellow */
+        .fav-btn,
+        .fav-icon-btn {
+            border-color: #4a3a00;
+            color: #ffdb4d;
+        }
+        .fav-btn:hover,
+        .fav-icon-btn:hover {
+            border-color: #ccaa00;
+            color: #ffe033;
+            background: transparent;
+        }
+
+        /* Add to Today — green */
+        .add-today-btn {
+            border-color: #1a4a30;
+            color: #49c98a;
+        }
+        .add-today-btn:hover {
+            border-color: #2faa6a;
+            color: #a0ecc8;
+            background: transparent;
         }
 
         .modal {
@@ -250,7 +257,7 @@
             top: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.8);
+            background: #000000cc;
             backdrop-filter: blur(4px);
         }
 
@@ -267,7 +274,7 @@
             padding: 24px;
             max-width: 500px;
             width: 90%;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+            box-shadow: 0 20px 60px #00000099;
         }
 
         .modal-header {
@@ -314,7 +321,7 @@
         .form-group select:focus {
             outline: none;
             border-color: #5c8dff;
-            box-shadow: 0 0 0 3px rgba(92, 141, 255, 0.15);
+            box-shadow: 0 0 0 3px #5c8dff26;
         }
 
         .form-group select {
@@ -350,7 +357,7 @@
 
         .modal-actions .btn-primary:hover {
             transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(92, 141, 255, 0.35);
+            box-shadow: 0 4px 12px #5c8dff59;
         }
 
         .modal-actions .btn-secondary {
@@ -361,7 +368,7 @@
 
         .modal-actions .btn-secondary:hover {
             border-color: #4b5569;
-            background: rgba(255, 255, 255, 0.03);
+            background: #ffffff08;
         }
 
         .food-details {
@@ -408,26 +415,26 @@
         }
 
         .confidence.high {
-            background: rgba(47, 196, 141, 0.16);
-            border-color: rgba(47, 196, 141, 0.35);
+            background: #2fc48d29;
+            border-color: #2fc48d59;
             color: #8ce5bf;
         }
 
         .confidence.medium {
-            background: rgba(255, 181, 72, 0.16);
-            border-color: rgba(255, 181, 72, 0.35);
+            background: #ffb54829;
+            border-color: #ffb54859;
             color: #ffd49a;
         }
 
         .confidence.low {
-            background: rgba(239, 91, 113, 0.16);
-            border-color: rgba(239, 91, 113, 0.35);
+            background: #ef5b7129;
+            border-color: #ef5b7159;
             color: #ffb5c0;
         }
 
         .confidence.manual {
-            background: rgba(152, 167, 198, 0.16);
-            border-color: rgba(152, 167, 198, 0.35);
+            background: #98a7c629;
+            border-color: #98a7c659;
             color: #cfd7eb;
         }
 
@@ -486,22 +493,22 @@
         }
 
         .meal-badge.breakfast {
-            border-color: rgba(255, 181, 72, 0.4);
+            border-color: #ffb54866;
             color: #ffd59f;
         }
 
         .meal-badge.lunch {
-            border-color: rgba(95, 170, 255, 0.4);
+            border-color: #5faaff66;
             color: #abd3ff;
         }
 
         .meal-badge.dinner {
-            border-color: rgba(213, 124, 255, 0.4);
+            border-color: #d57cff66;
             color: #e4beff;
         }
 
         .meal-badge.snack {
-            border-color: rgba(47, 196, 141, 0.4);
+            border-color: #2fc48d66;
             color: #a0ebca;
         }
 
@@ -527,7 +534,7 @@
         }
 
         .meal-filter-btn:hover {
-            border-color: #5b6a8a;
+            border-color: #7e8aa8;
             color: #ccd4e8;
         }
 
@@ -537,17 +544,17 @@
             color: #a8baff;
         }
 
-        .meal-filter-btn.active.breakfast { border-color: rgba(255, 181, 72, 0.7); color: #ffd59f; }
-        .meal-filter-btn.active.lunch     { border-color: rgba(95, 170, 255, 0.7); color: #abd3ff; }
-        .meal-filter-btn.active.dinner    { border-color: rgba(213, 124, 255, 0.7); color: #e4beff; }
-        .meal-filter-btn.active.snack     { border-color: rgba(47, 196, 141, 0.7); color: #a0ebca; }
+        .meal-filter-btn.active.breakfast { border-color: #ffb548b2; color: #ffd59f; }
+        .meal-filter-btn.active.lunch     { border-color: #5faaffb2; color: #abd3ff; }
+        .meal-filter-btn.active.dinner    { border-color: #d57cffb2; color: #e4beff; }
+        .meal-filter-btn.active.snack     { border-color: #2fc48db2; color: #a0ebca; }
 
         .meal-group-header {
             font-size: 0.75rem;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.07em;
-            color: #5b6a8a;
+            color: #7e8aa8;
             margin: 18px 0 8px 0;
             padding-bottom: 6px;
             border-bottom: 1px solid #212636;
@@ -612,23 +619,23 @@
         }
 
         .status-message.success {
-            background: rgba(47, 196, 141, 0.14);
+            background: #2fc48d24;
             color: #a3ebcc;
-            border-color: rgba(47, 196, 141, 0.28);
+            border-color: #2fc48d47;
             display: block;
         }
 
         .status-message.error {
-            background: rgba(239, 91, 113, 0.14);
+            background: #ef5b7124;
             color: #ffb7c2;
-            border-color: rgba(239, 91, 113, 0.28);
+            border-color: #ef5b7147;
             display: block;
         }
 
         .status-message.info {
-            background: rgba(95, 170, 255, 0.14);
+            background: #5faaff24;
             color: #b7d8ff;
-            border-color: rgba(95, 170, 255, 0.28);
+            border-color: #5faaff47;
             display: block;
         }
 
@@ -664,7 +671,7 @@
         .clarification-section input:focus {
             outline: none;
             border-color: #5c8dff;
-            box-shadow: 0 0 0 3px rgba(92, 141, 255, 0.15);
+            box-shadow: 0 0 0 3px #5c8dff26;
         }
 
         .tabs {
@@ -859,11 +866,13 @@
         .detail-food {
             color: #e6e9f3;
             font-weight: 500;
+            font-size: 0.92rem;
         }
 
         .detail-calories {
             color: #8fb2ff;
             font-weight: 600;
+            font-size: 0.92rem;
             white-space: nowrap;
         }
 
@@ -877,30 +886,232 @@
         }
 
         .secondary-btn:hover {
-            border-color: #5b6a8a;
+            border-color: #7e8aa8;
             color: #ccd4e8;
         }
 
-        .weekly-nav {
-            display: flex;
+        .date-nav {
+            display: grid;
+            grid-template-columns: 72px 1fr 72px;
             align-items: center;
-            justify-content: space-between;
             margin-bottom: 20px;
             gap: 8px;
         }
 
-        .weekly-nav .secondary-btn {
-            width: auto;
+        .date-nav .secondary-btn {
+            width: 100%;
             margin-top: 0;
+            padding-left: 4px;
+            padding-right: 4px;
+            font-size: 0.8rem;
             flex: 0 0 auto;
         }
 
-        .weekly-range-label {
-            font-size: 0.9rem;
-            font-weight: 600;
-            color: #8899c0;
-            flex: 1;
+        .date-nav .secondary-btn:first-of-type,
+        .date-nav .secondary-btn:last-of-type {
+            justify-self: stretch;
+        }
+
+        .nav-date-picker {
+            width: 100%;
+            min-width: 0;
+            margin-top: 0;
+            justify-self: center;
+            padding: 8px 10px;
+            border-radius: 10px;
+            border: 1px solid #39415a;
+            background: #171e30;
+            color: #d5ddf2;
             text-align: center;
+            font-size: 0.86rem;
+            font-weight: 600;
+            letter-spacing: 0.01em;
+            font-family: inherit;
+            cursor: pointer;
+        }
+
+        .nav-date-picker:hover {
+            border-color: #7e8aa8;
+            background: #1b243a;
+        }
+
+        .nav-date-picker:focus {
+            outline: none;
+            border-color: #5c8dff;
+            box-shadow: 0 0 0 3px #5c8dff26;
+        }
+
+        .nav-date-picker::-webkit-calendar-picker-indicator {
+            filter: invert(0.86) hue-rotate(180deg);
+            cursor: pointer;
+        }
+
+        .weekly-day-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .weekly-day-card {
+            border: 1px solid #2a3144;
+            border-radius: 12px;
+            background: #121520;
+            overflow: hidden;
+        }
+
+        .weekly-day-header {
+            width: 100%;
+            border: none;
+            background: transparent;
+            color: inherit;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 14px;
+            cursor: pointer;
+            text-align: left;
+        }
+
+        .weekly-day-header:hover {
+            background: #171b29;
+        }
+
+        .weekly-day-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #e7ebf8;
+        }
+
+        .weekly-day-subtitle {
+            font-size: 0.75rem;
+            color: #7e8aa8;
+            margin-top: 2px;
+        }
+
+        .weekly-day-stat-wrap {
+            text-align: right;
+            flex-shrink: 0;
+            min-width: 112px;
+        }
+
+        .weekly-day-title-wrap {
+            min-width: 0;
+            flex: 1;
+        }
+
+        .weekly-day-calories {
+            color: #8fb2ff;
+            font-size: 0.92rem;
+            font-weight: 700;
+        }
+
+        .weekly-day-macros {
+            font-size: 0.7rem;
+            color: #7e8aa8;
+            margin-top: 2px;
+        }
+
+        .weekly-today-chip {
+            display: inline-block;
+            margin-left: 6px;
+            padding: 1px 7px;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            border-radius: 999px;
+            border: 1px solid #ffd59f8c;
+            color: #ffd59f;
+        }
+
+        .weekly-day-body {
+            display: none;
+            padding: 0 12px 10px 12px;
+            border-top: 1px solid #22293a;
+        }
+
+        .weekly-day-body.open {
+            display: block;
+        }
+
+        .weekly-day-empty {
+            font-size: 0.8rem;
+            color: #8f99b2;
+            padding: 10px 0;
+        }
+
+        .detail-item-compact {
+            font-size: 0.8rem;
+        }
+
+        .weekly-entry-card {
+            border-bottom: 1px solid #232838;
+            padding: 10px 0;
+        }
+
+        .weekly-entry-card:last-child {
+            border-bottom: none;
+        }
+
+        .weekly-entry-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .weekly-entry-top .detail-food {
+            flex: 1;
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
+
+        .weekly-entry-middle {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-top: 6px;
+        }
+
+        .weekly-entry-middle .quantity-label {
+            margin-left: 0;
+        }
+
+        .weekly-entry-middle .quantity-controls {
+            margin-left: 0;
+            flex-shrink: 0;
+        }
+
+        .weekly-entry-actions-bottom {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .entry-qty-left {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .entry-icon-btns {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .weekly-entry-actions-bottom .add-today-btn {
+            margin: 0;
+            flex: 0 0 auto;
+        }
+
+        .daily-entry-macros {
+            font-size: 0.72rem;
+            color: #7e8aa8;
+            margin-top: 3px;
         }
 
         .weekly-chart {
@@ -941,7 +1152,7 @@
 
         .weekly-bar-label {
             font-size: 0.68rem;
-            color: #5b6a8a;
+            color: #7e8aa8;
             text-align: center;
             white-space: nowrap;
         }
@@ -963,7 +1174,7 @@
         .weekly-stats-table th {
             text-align: left;
             padding: 6px 10px;
-            color: #5b6a8a;
+            color: #7e8aa8;
             font-weight: 600;
             font-size: 0.72rem;
             text-transform: uppercase;
@@ -983,35 +1194,35 @@
 
         .weekly-totals-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 10px;
-            margin-top: 16px;
+            margin-bottom: 14px;
         }
 
         .weekly-stat-card {
             background: #1a2033;
             border: 1px solid #212636;
             border-radius: 10px;
-            padding: 12px 14px;
+            padding: 9px 10px;
         }
 
         .weekly-stat-card .stat-label {
-            font-size: 0.7rem;
+            font-size: 0.64rem;
             text-transform: uppercase;
             letter-spacing: 0.06em;
-            color: #5b6a8a;
-            margin-bottom: 4px;
+            color: #7e8aa8;
+            margin-bottom: 3px;
         }
 
         .weekly-stat-card .stat-value {
-            font-size: 1.2rem;
+            font-size: 1rem;
             font-weight: 700;
             color: #8fb2ff;
         }
 
         .weekly-stat-card .stat-avg {
-            font-size: 0.72rem;
-            color: #4a5570;
+            font-size: 0.68rem;
+            color: #7e8aa8;
             margin-top: 2px;
         }
 
@@ -1042,22 +1253,11 @@
         /* Macro pills on summary day rows */
         .summary-macros {
             font-size: 0.72rem;
-            color: #5b6a8a;
+            color: #7e8aa8;
             margin-top: 2px;
         }
 
-        /* Favorites */
-        .fav-btn {
-            background: transparent;
-            border: 1px solid #31394d;
-            border-radius: 6px;
-            color: #7b8aaa;
-            font-size: 0.78rem;
-            padding: 3px 8px;
-            cursor: pointer;
-            transition: border-color 0.15s, color 0.15s;
-        }
-        .fav-btn:hover { border-color: #f5c842; color: #f5c842; }
+        /* Favorites list star — inherits from unified .fav-btn above */
 
         .meal-group-header-row {
             display: flex;
@@ -1119,7 +1319,7 @@
 
         .fav-card-meta {
             font-size: 0.72rem;
-            color: #5b6a8a;
+            color: #7e8aa8;
             margin-top: 2px;
         }
 
@@ -1128,31 +1328,6 @@
             gap: 6px;
             flex-shrink: 0;
         }
-
-        .fav-log-btn {
-            background: #1a2340;
-            border: 1px solid #5b7aff;
-            border-radius: 8px;
-            color: #a8baff;
-            font-size: 0.82rem;
-            font-weight: 600;
-            padding: 5px 14px;
-            cursor: pointer;
-            transition: background 0.15s;
-        }
-        .fav-log-btn:hover { background: #223060; }
-
-        .fav-del-btn {
-            background: transparent;
-            border: 1px solid #3d2222;
-            border-radius: 8px;
-            color: #7a4040;
-            font-size: 0.82rem;
-            padding: 5px 10px;
-            cursor: pointer;
-            transition: border-color 0.15s, color 0.15s;
-        }
-        .fav-del-btn:hover { border-color: #cc4444; color: #cc4444; }
 
         .fav-empty {
             font-size: 0.84rem;
@@ -1191,5 +1366,53 @@
             .tab {
                 font-size: 13px;
                 padding: 9px 8px;
+            }
+
+            .date-nav {
+                grid-template-columns: 64px 1fr 64px;
+                gap: 6px;
+            }
+
+            .nav-date-picker {
+                width: 100%;
+                min-width: 0;
+                font-size: 0.82rem;
+            }
+
+            .weekly-totals-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .weekly-day-header {
+                flex-direction: row;
+                align-items: flex-start;
+            }
+
+            .weekly-day-stat-wrap {
+                text-align: right;
+            }
+
+            .food-item-info,
+            .detail-actions {
+                flex-direction: column;
+                align-items: flex-end;
+                gap: 6px;
+            }
+
+            .add-today-btn {
+                min-width: 72px;
+            }
+
+            .icon-btn {
+                min-width: 32px;
+            }
+
+            .weekly-entry-middle {
+                justify-content: flex-start;
+                gap: 10px;
+            }
+
+            .weekly-entry-actions-bottom {
+                gap: 6px;
             }
         }
