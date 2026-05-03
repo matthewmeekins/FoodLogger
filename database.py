@@ -183,6 +183,16 @@ def init_db() -> None:
         )
     """)
 
+    # favorites: saved meals/items for quick re-logging
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS favorites (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT NOT NULL,
+            items_json  TEXT NOT NULL,
+            created_at  TEXT NOT NULL
+        )
+    """)
+
     # Ensure existing databases are upgraded with any missing nutrient columns.
     _ensure_resolved_entry_columns(cursor)
     _ensure_indexes(cursor)
@@ -692,6 +702,120 @@ def get_summary_by_date_range(start_date: str, end_date: str) -> List[Dict[str, 
     conn.close()
 
     return [dict(row) for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# Favorites
+# ---------------------------------------------------------------------------
+
+def insert_favorite(name: str, items: List[Dict[str, Any]]) -> int:
+    """Save a new favorite. items is a list of nutrition dicts. Returns new id."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    created_at = datetime.now(UTC).isoformat()
+    cursor.execute(
+        "INSERT INTO favorites (name, items_json, created_at) VALUES (?, ?, ?)",
+        (name, json.dumps(items), created_at),
+    )
+    fav_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return fav_id
+
+
+def get_favorites() -> List[Dict[str, Any]]:
+    """Return all favorites ordered by name, with parsed items list and computed totals."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, items_json, created_at FROM favorites ORDER BY name ASC")
+    rows = cursor.fetchall()
+    conn.close()
+
+    result = []
+    for row in rows:
+        items = json.loads(row["items_json"])
+        total_calories = sum(i.get("calories") or 0 for i in items)
+        total_protein = sum(i.get("protein_g") or 0 for i in items)
+        total_carbs = sum(i.get("carbs_g") or 0 for i in items)
+        total_fat = sum(i.get("fat_g") or 0 for i in items)
+        result.append({
+            "id": row["id"],
+            "name": row["name"],
+            "items": items,
+            "item_count": len(items),
+            "total_calories": total_calories,
+            "total_protein_g": round(total_protein, 1),
+            "total_carbs_g": round(total_carbs, 1),
+            "total_fat_g": round(total_fat, 1),
+            "created_at": row["created_at"],
+        })
+    return result
+
+
+def get_favorite(fav_id: int) -> Optional[Dict[str, Any]]:
+    """Return a single favorite by id, or None if not found."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, items_json, created_at FROM favorites WHERE id = ?", (fav_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    items = json.loads(row["items_json"])
+    return {"id": row["id"], "name": row["name"], "items": items, "created_at": row["created_at"]}
+
+
+def delete_favorite(fav_id: int) -> bool:
+    """Delete a favorite by id. Returns True if deleted."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM favorites WHERE id = ?", (fav_id,))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+
+def log_favorite(fav_id: int) -> List[int]:
+    """
+    Log all items from a favorite as new resolved_entries for today.
+    Returns list of new entry ids.
+    """
+    fav = get_favorite(fav_id)
+    if not fav:
+        return []
+
+    today = date.today().isoformat()
+    new_ids = []
+
+    # We need a parsed_entry stub to satisfy the FK
+    raw_id = insert_raw_entry(f"[favorite] {fav['name']}")
+    parsed_id = insert_parsed_entry(raw_id, {"confidence": "high", "intents": []}, "high")
+
+    for item in fav["items"]:
+        qty = float(item.get("quantity_value") or 1)
+        entry_id = insert_resolved_entry(
+            parsed_id=parsed_id,
+            food_name=item.get("food_name") or item.get("name", ""),
+            calories=item.get("calories"),
+            meal=item.get("meal"),
+            logged_date=today,
+            source="favorite",
+            confidence_level="high",
+            protein_g=item.get("protein_g"),
+            carbs_g=item.get("carbs_g"),
+            fat_g=item.get("fat_g"),
+            reasoning=item.get("reasoning"),
+            quantity_value=qty,
+            quantity_unit=item.get("quantity_unit"),
+            per_unit_calories=item.get("per_unit_calories") or (item.get("calories") / qty if item.get("calories") and qty else None),
+            per_unit_protein_g=item.get("per_unit_protein_g") or (item.get("protein_g") / qty if item.get("protein_g") and qty else None),
+            per_unit_carbs_g=item.get("per_unit_carbs_g") or (item.get("carbs_g") / qty if item.get("carbs_g") and qty else None),
+            per_unit_fat_g=item.get("per_unit_fat_g") or (item.get("fat_g") / qty if item.get("fat_g") and qty else None),
+        )
+        new_ids.append(entry_id)
+
+    return new_ids
 
 
 def get_weekly_summary(start_date: str) -> Dict[str, Any]:

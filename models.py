@@ -63,3 +63,26 @@ class UpdateEntryRequest(BaseModel):
     carbs_g: Optional[float] = None
     fat_g: Optional[float] = None
     reasoning: Optional[str] = None
+
+
+class FavoriteItem(BaseModel):
+    """A single item stored inside a favorite."""
+    food_name: str
+    calories: Optional[int] = None
+    meal: Optional[str] = None
+    protein_g: Optional[float] = None
+    carbs_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    reasoning: Optional[str] = None
+    quantity_value: Optional[float] = 1.0
+    quantity_unit: Optional[str] = None
+    per_unit_calories: Optional[float] = None
+    per_unit_protein_g: Optional[float] = None
+    per_unit_carbs_g: Optional[float] = None
+    per_unit_fat_g: Optional[float] = None
+
+
+class FavoriteCreateRequest(BaseModel):
+    """Request to create a new favorite."""
+    name: str
+    items: List[FavoriteItem]

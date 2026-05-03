@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 
 import database
 import llm
-from models import UpdateEntryRequest
+from models import UpdateEntryRequest, FavoriteCreateRequest
 
 
 # Load environment variables
@@ -404,6 +404,51 @@ def get_entry_details(entry_id: int) -> Dict[str, Any]:
         "entry_id": entry_id,
         "title": "Entry details",
         "lines": lines,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Favorites endpoints
+# ---------------------------------------------------------------------------
+
+@app.post("/favorites")
+def create_favorite(body: FavoriteCreateRequest) -> Dict[str, Any]:
+    """Save a new favorite (single item or multi-item meal)."""
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    items = [item.model_dump() for item in body.items]
+    fav_id = database.insert_favorite(name, items)
+    return {"status": "success", "id": fav_id, "name": name, "item_count": len(items)}
+
+
+@app.get("/favorites")
+def list_favorites() -> Dict[str, Any]:
+    """List all saved favorites with computed totals."""
+    favorites = database.get_favorites()
+    return {"favorites": favorites}
+
+
+@app.delete("/favorites/{fav_id}")
+def remove_favorite(fav_id: int) -> Dict[str, Any]:
+    """Delete a favorite by id."""
+    deleted = database.delete_favorite(fav_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Favorite not found")
+    return {"status": "success", "message": "Favorite deleted"}
+
+
+@app.post("/favorites/{fav_id}/log")
+def log_favorite(fav_id: int) -> Dict[str, Any]:
+    """Log all items from a favorite as new entries for today."""
+    new_ids = database.log_favorite(fav_id)
+    if not new_ids:
+        raise HTTPException(status_code=404, detail="Favorite not found")
+    return {
+        "status": "success",
+        "message": f"Logged {len(new_ids)} item(s) from favorite",
+        "entry_ids": new_ids,
+        "items_logged": len(new_ids),
     }
 
 

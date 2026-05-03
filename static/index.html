@@ -1049,6 +1049,130 @@
             margin-top: 2px;
         }
 
+        /* Favorites */
+        .fav-btn {
+            background: transparent;
+            border: 1px solid #31394d;
+            border-radius: 6px;
+            color: #7b8aaa;
+            font-size: 0.78rem;
+            padding: 3px 8px;
+            cursor: pointer;
+            transition: border-color 0.15s, color 0.15s;
+        }
+        .fav-btn:hover { border-color: #f5c842; color: #f5c842; }
+
+        .meal-group-header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .fav-search-wrap {
+            position: relative;
+            margin-bottom: 10px;
+        }
+
+        .fav-search-wrap input {
+            width: 100%;
+            box-sizing: border-box;
+            background: #141927;
+            border: 1px solid #31394d;
+            border-radius: 8px;
+            color: #c0c8e0;
+            font-size: 0.88rem;
+            padding: 8px 12px;
+            outline: none;
+        }
+
+        .fav-search-wrap input:focus { border-color: #5b7aff; }
+
+        .fav-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 320px;
+            overflow-y: auto;
+        }
+
+        .fav-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #141927;
+            border: 1px solid #212636;
+            border-radius: 10px;
+            padding: 10px 14px;
+            gap: 10px;
+            transition: border-color 0.15s;
+        }
+
+        .fav-card:hover { border-color: #3a4a6a; }
+
+        .fav-card-info { flex: 1; min-width: 0; }
+
+        .fav-card-name {
+            font-weight: 600;
+            color: #d0d8f0;
+            font-size: 0.92rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .fav-card-meta {
+            font-size: 0.72rem;
+            color: #5b6a8a;
+            margin-top: 2px;
+        }
+
+        .fav-card-actions {
+            display: flex;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .fav-log-btn {
+            background: #1a2340;
+            border: 1px solid #5b7aff;
+            border-radius: 8px;
+            color: #a8baff;
+            font-size: 0.82rem;
+            font-weight: 600;
+            padding: 5px 14px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .fav-log-btn:hover { background: #223060; }
+
+        .fav-del-btn {
+            background: transparent;
+            border: 1px solid #3d2222;
+            border-radius: 8px;
+            color: #7a4040;
+            font-size: 0.82rem;
+            padding: 5px 10px;
+            cursor: pointer;
+            transition: border-color 0.15s, color 0.15s;
+        }
+        .fav-del-btn:hover { border-color: #cc4444; color: #cc4444; }
+
+        .fav-empty {
+            font-size: 0.84rem;
+            color: #3d4a65;
+            text-align: center;
+            padding: 16px 0;
+        }
+
+        .fav-section-title {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: #4a5570;
+            margin: 22px 0 10px 0;
+        }
+
         @media (max-width: 480px) {
             body {
                 padding: 14px;
@@ -1113,6 +1237,14 @@
                     <input type="number" id="manual-calories" placeholder="Estimated calories" min="1" />
                     <button id="manual-button" class="button" onclick="submitManualEstimate()">Save Estimate</button>
                     <div id="manual-status" class="status-message"></div>
+                </div>
+
+                <div class="fav-section-title">Quick Log — Favorites</div>
+                <div class="fav-search-wrap">
+                    <input type="text" id="fav-search" placeholder="Search favorites..." oninput="filterFavorites()" />
+                </div>
+                <div id="fav-list" class="fav-list">
+                    <div class="fav-empty">No favorites saved yet.</div>
                 </div>
             </div>
         </div>
@@ -1213,6 +1345,8 @@
                 loadSummary();
             } else if (tabName === 'weekly') {
                 loadWeekly();
+            } else if (tabName === 'log') {
+                loadFavorites();
             }
         }
 
@@ -1422,6 +1556,7 @@
                         </div>
                         <div class="food-item-info">
                             ${quantityControls}
+                            <button class="fav-btn" onclick="saveEntryAsFavorite(${entry.id}); event.stopPropagation();" title="Save as favorite">&#9733;</button>
                             <button class="edit-btn" onclick="openEditModal(${entry.id})">Edit</button>
                             <button class="delete-btn" onclick="deleteEntry(${entry.id})">Delete</button>
                         </div>
@@ -1463,7 +1598,10 @@
                 let html = '';
                 orderedMeals.forEach(meal => {
                     const label = meal.charAt(0).toUpperCase() + meal.slice(1);
-                    html += `<div class="meal-group-header ${meal === 'unspecified' ? '' : meal}">${label}</div>`;
+                    const saveMealBtn = meal !== 'unspecified'
+                        ? `<button class="fav-btn" onclick="saveMealGroupAsFavorite('${meal}', event)">★ Save meal</button>`
+                        : '';
+                    html += `<div class="meal-group-header-row"><div class="meal-group-header ${meal === 'unspecified' ? '' : meal}">${label}</div>${saveMealBtn}</div>`;
                     groups[meal].forEach(entry => { html += _buildEntryHtml(entry); });
                 });
                 container.innerHTML = html;
@@ -1501,6 +1639,164 @@
                 totalSection.style.display = 'block';
             } else {
                 totalSection.style.display = 'none';
+            }
+        }
+
+        // ---------------------------------------------------------------------------
+        // Favorites
+        // ---------------------------------------------------------------------------
+
+        let _allFavorites = [];
+
+        async function loadFavorites() {
+            try {
+                const response = await fetch(`${API_BASE}/favorites`);
+                const data = await response.json();
+                _allFavorites = data.favorites || [];
+                renderFavorites(_allFavorites);
+            } catch {
+                // Silently fail — favorites list is non-critical on load
+            }
+        }
+
+        function filterFavorites() {
+            const q = (document.getElementById('fav-search')?.value || '').toLowerCase().trim();
+            const filtered = q ? _allFavorites.filter(f => f.name.toLowerCase().includes(q)) : _allFavorites;
+            renderFavorites(filtered);
+        }
+
+        function renderFavorites(favorites) {
+            const container = document.getElementById('fav-list');
+            if (!container) return;
+
+            if (favorites.length === 0) {
+                container.innerHTML = `<div class="fav-empty">${_allFavorites.length === 0 ? 'No favorites saved yet.' : 'No matches.'}</div>`;
+                return;
+            }
+
+            container.innerHTML = favorites.map(fav => {
+                const meta = [
+                    fav.item_count > 1 ? `${fav.item_count} items` : '1 item',
+                    fav.total_calories ? `${fav.total_calories} cal` : '',
+                    fav.total_protein_g ? `P ${formatNutrient(fav.total_protein_g)}g` : '',
+                    fav.total_carbs_g ? `C ${formatNutrient(fav.total_carbs_g)}g` : '',
+                    fav.total_fat_g ? `F ${formatNutrient(fav.total_fat_g)}g` : '',
+                ].filter(Boolean).join(' · ');
+
+                return `
+                    <div class="fav-card">
+                        <div class="fav-card-info">
+                            <div class="fav-card-name">${fav.name}</div>
+                            <div class="fav-card-meta">${meta}</div>
+                        </div>
+                        <div class="fav-card-actions">
+                            <button class="fav-log-btn" onclick="logFavorite(${fav.id}, '${fav.name.replace(/'/g, "\\'")}')">Log</button>
+                            <button class="fav-del-btn" onclick="deleteFavorite(${fav.id}, event)">✕</button>
+                        </div>
+                    </div>`;
+            }).join('');
+        }
+
+        async function logFavorite(favId, favName) {
+            try {
+                const response = await fetch(`${API_BASE}/favorites/${favId}/log`, { method: 'POST' });
+                if (!response.ok) throw new Error('Failed to log favorite');
+                const data = await response.json();
+                showStatus(`✓ Logged "${favName}" (${data.items_logged} item${data.items_logged !== 1 ? 's' : ''})`, 'success');
+                loadTodayEntries();
+                // Switch to Today tab
+                setTimeout(() => { document.querySelectorAll('.tab')[1].click(); }, 800);
+            } catch (error) {
+                showStatus(error.message, 'error');
+            }
+        }
+
+        async function deleteFavorite(favId, event) {
+            event.stopPropagation();
+            if (!confirm('Delete this favorite?')) return;
+            try {
+                const response = await fetch(`${API_BASE}/favorites/${favId}`, { method: 'DELETE' });
+                if (!response.ok) throw new Error('Failed to delete favorite');
+                await loadFavorites();
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        async function saveEntryAsFavorite(entryId) {
+            // Find entry in loaded today entries
+            const entry = _todayEntries.find(e => e.id === entryId);
+            if (!entry) return;
+
+            const name = prompt(`Save "${entry.food_name}" as a favorite. Enter a name:`, entry.food_name);
+            if (!name || !name.trim()) return;
+
+            const item = {
+                food_name: entry.food_name,
+                calories: entry.calories,
+                meal: entry.meal,
+                protein_g: entry.protein_g,
+                carbs_g: entry.carbs_g,
+                fat_g: entry.fat_g,
+                reasoning: entry.reasoning,
+                quantity_value: entry.quantity_value || 1,
+                quantity_unit: entry.quantity_unit || null,
+                per_unit_calories: entry.per_unit_calories || null,
+                per_unit_protein_g: entry.per_unit_protein_g || null,
+                per_unit_carbs_g: entry.per_unit_carbs_g || null,
+                per_unit_fat_g: entry.per_unit_fat_g || null,
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}/favorites`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: name.trim(), items: [item] }),
+                });
+                if (!response.ok) throw new Error('Failed to save favorite');
+                showStatus(`✓ Saved "${name.trim()}" as a favorite`, 'success');
+                await loadFavorites();
+            } catch (error) {
+                showStatus(error.message, 'error');
+            }
+        }
+
+        async function saveMealGroupAsFavorite(meal, event) {
+            event.stopPropagation();
+            const mealEntries = _todayEntries.filter(e => (e.meal || '').toLowerCase() === meal);
+            if (mealEntries.length === 0) return;
+
+            const defaultName = meal.charAt(0).toUpperCase() + meal.slice(1);
+            const name = prompt(`Save all ${mealEntries.length} ${meal} items as a favorite. Enter a name:`, defaultName);
+            if (!name || !name.trim()) return;
+
+            const items = mealEntries.map(entry => ({
+                food_name: entry.food_name,
+                calories: entry.calories,
+                meal: entry.meal,
+                protein_g: entry.protein_g,
+                carbs_g: entry.carbs_g,
+                fat_g: entry.fat_g,
+                reasoning: entry.reasoning,
+                quantity_value: entry.quantity_value || 1,
+                quantity_unit: entry.quantity_unit || null,
+                per_unit_calories: entry.per_unit_calories || null,
+                per_unit_protein_g: entry.per_unit_protein_g || null,
+                per_unit_carbs_g: entry.per_unit_carbs_g || null,
+                per_unit_fat_g: entry.per_unit_fat_g || null,
+            }));
+
+            try {
+                const response = await fetch(`${API_BASE}/favorites`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: name.trim(), items }),
+                });
+                if (!response.ok) throw new Error('Failed to save favorite');
+                showStatus(`✓ Saved "${name.trim()}" (${items.length} items) as a favorite`, 'success');
+                await loadFavorites();
+            } catch (error) {
+                showStatus(error.message, 'error');
             }
         }
 
@@ -2055,6 +2351,7 @@
         });
 
         initializeSummaryDateRange();
+        loadFavorites();
     </script>
 
     <!-- Edit Entry Modal -->

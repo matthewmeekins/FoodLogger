@@ -280,5 +280,78 @@ class FoodLogRegressionTests(unittest.TestCase):
         self.assertEqual(day["total_fat_g"], 8)
 
 
+    def test_favorites_create_list_delete(self) -> None:
+        """Can create, list, and delete a single-item favorite."""
+        client = TestClient(main.app)
+
+        # Create
+        payload = {
+            "name": "Morning Banana",
+            "items": [{"food_name": "Banana", "calories": 105, "protein_g": 1.3, "carbs_g": 27.0, "fat_g": 0.4, "meal": "breakfast", "quantity_value": 1}],
+        }
+        resp = client.post("/favorites", json=payload)
+        self.assertEqual(resp.status_code, 200)
+        fav_id = resp.json()["id"]
+
+        # List
+        resp = client.get("/favorites")
+        self.assertEqual(resp.status_code, 200)
+        names = [f["name"] for f in resp.json()["favorites"]]
+        self.assertIn("Morning Banana", names)
+
+        # Delete
+        resp = client.delete(f"/favorites/{fav_id}")
+        self.assertEqual(resp.status_code, 200)
+
+        resp = client.get("/favorites")
+        names = [f["name"] for f in resp.json()["favorites"]]
+        self.assertNotIn("Morning Banana", names)
+
+    def test_log_favorite_creates_today_entries(self) -> None:
+        """POST /favorites/{id}/log creates resolved entries for today."""
+        client = TestClient(main.app)
+
+        payload = {
+            "name": "Standard Breakfast",
+            "items": [
+                {"food_name": "Banana", "calories": 105, "meal": "breakfast", "quantity_value": 1},
+                {"food_name": "Coffee", "calories": 5, "meal": "breakfast", "quantity_value": 1},
+            ],
+        }
+        create_resp = client.post("/favorites", json=payload)
+        fav_id = create_resp.json()["id"]
+
+        log_resp = client.post(f"/favorites/{fav_id}/log")
+        self.assertEqual(log_resp.status_code, 200)
+        data = log_resp.json()
+        self.assertEqual(data["items_logged"], 2)
+
+        today = date.today().isoformat()
+        entries = database.get_entries_for_date(today)
+        logged_names = {e["food_name"] for e in entries}
+        self.assertIn("Banana", logged_names)
+        self.assertIn("Coffee", logged_names)
+
+    def test_favorites_multi_item_totals(self) -> None:
+        """Favorites list computes total_calories from all items."""
+        client = TestClient(main.app)
+
+        payload = {
+            "name": "Big Meal",
+            "items": [
+                {"food_name": "Rice", "calories": 300, "protein_g": 6, "carbs_g": 65, "fat_g": 1},
+                {"food_name": "Chicken", "calories": 250, "protein_g": 35, "carbs_g": 0, "fat_g": 8},
+            ],
+        }
+        create_resp = client.post("/favorites", json=payload)
+        fav_id = create_resp.json()["id"]
+
+        list_resp = client.get("/favorites")
+        fav = next(f for f in list_resp.json()["favorites"] if f["id"] == fav_id)
+        self.assertEqual(fav["total_calories"], 550)
+        self.assertEqual(fav["item_count"], 2)
+        self.assertAlmostEqual(fav["total_protein_g"], 41.0)
+
+
 if __name__ == "__main__":
     unittest.main()
