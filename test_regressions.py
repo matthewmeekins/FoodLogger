@@ -26,7 +26,7 @@ class FoodLogRegressionTests(unittest.TestCase):
         today = date.today().isoformat()
 
         raw_1 = database.insert_raw_entry("first")
-        parsed_1 = database.insert_parsed_entry(raw_1, {"confidence": "high", "intents": []}, "high")
+        parsed_1 = database.insert_parsed_entry(raw_1, {"intents": []})
         database.insert_resolved_entry(
             parsed_id=parsed_1,
             food_name="FIRST",
@@ -34,11 +34,10 @@ class FoodLogRegressionTests(unittest.TestCase):
             meal=None,
             logged_date=today,
             source="manual",
-            confidence_level="manual",
         )
 
         raw_2 = database.insert_raw_entry("second")
-        parsed_2 = database.insert_parsed_entry(raw_2, {"confidence": "high", "intents": []}, "high")
+        parsed_2 = database.insert_parsed_entry(raw_2, {"intents": []})
         database.insert_resolved_entry(
             parsed_id=parsed_2,
             food_name="SECOND",
@@ -46,7 +45,6 @@ class FoodLogRegressionTests(unittest.TestCase):
             meal=None,
             logged_date=today,
             source="manual",
-            confidence_level="manual",
         )
 
         client = TestClient(main.app)
@@ -61,7 +59,7 @@ class FoodLogRegressionTests(unittest.TestCase):
         today = date.today().isoformat()
 
         raw_id = database.insert_raw_entry("two kombuchas")
-        parsed_id = database.insert_parsed_entry(raw_id, {"confidence": "high", "intents": []}, "high")
+        parsed_id = database.insert_parsed_entry(raw_id, {"intents": []})
         entry_id = database.insert_resolved_entry(
             parsed_id=parsed_id,
             food_name="Humm Mango Passionfruit Kombucha",
@@ -78,7 +76,6 @@ class FoodLogRegressionTests(unittest.TestCase):
             meal=None,
             logged_date=today,
             source="manual",
-            confidence_level="manual",
         )
 
         updated = database.update_resolved_entry(entry_id, quantity_value=1)
@@ -99,7 +96,7 @@ class FoodLogRegressionTests(unittest.TestCase):
         historical_date = "2026-05-01"
 
         raw_id = database.insert_raw_entry("historical banana")
-        parsed_id = database.insert_parsed_entry(raw_id, {"confidence": "high", "intents": []}, "high")
+        parsed_id = database.insert_parsed_entry(raw_id, {"intents": []})
         original_entry_id = database.insert_resolved_entry(
             parsed_id=parsed_id,
             food_name="BANANA",
@@ -107,7 +104,6 @@ class FoodLogRegressionTests(unittest.TestCase):
             meal="breakfast",
             logged_date=historical_date,
             source="manual",
-            confidence_level="manual",
             quantity_value=1,
         )
 
@@ -127,7 +123,7 @@ class FoodLogRegressionTests(unittest.TestCase):
         today = date.today().isoformat()
 
         raw_id = database.insert_raw_entry("I had 2 humm kombuchas")
-        parsed_id = database.insert_parsed_entry(raw_id, {"confidence": "high", "intents": []}, "high")
+        parsed_id = database.insert_parsed_entry(raw_id, {"intents": []})
         entry_id = database.insert_resolved_entry(
             parsed_id=parsed_id,
             food_name="Humm Mango Passionfruit Kombucha",
@@ -140,7 +136,6 @@ class FoodLogRegressionTests(unittest.TestCase):
             meal="snack",
             logged_date=today,
             source="openai",
-            confidence_level="high",
             reasoning="Two bottles at roughly 80 calories each.",
         )
 
@@ -211,7 +206,7 @@ class FoodLogRegressionTests(unittest.TestCase):
         database.insert_resolved_entry(
             parsed_id=database.insert_parsed_entry(
                 database.insert_raw_entry("breakfast"),
-                {"confidence": "high", "intents": []}, "high"
+                {"intents": []}
             ),
             food_name="Oatmeal",
             calories=300,
@@ -221,12 +216,11 @@ class FoodLogRegressionTests(unittest.TestCase):
             meal="breakfast",
             logged_date="2026-04-28",
             source="manual",
-            confidence_level="manual",
         )
         database.insert_resolved_entry(
             parsed_id=database.insert_parsed_entry(
                 database.insert_raw_entry("lunch"),
-                {"confidence": "high", "intents": []}, "high"
+                {"intents": []}
             ),
             food_name="Chicken Salad",
             calories=500,
@@ -236,7 +230,6 @@ class FoodLogRegressionTests(unittest.TestCase):
             meal="lunch",
             logged_date="2026-04-29",
             source="manual",
-            confidence_level="manual",
         )
 
         client = TestClient(main.app)
@@ -256,7 +249,7 @@ class FoodLogRegressionTests(unittest.TestCase):
         database.insert_resolved_entry(
             parsed_id=database.insert_parsed_entry(
                 database.insert_raw_entry("test"),
-                {"confidence": "high", "intents": []}, "high"
+                {"intents": []}
             ),
             food_name="Test Food",
             calories=200,
@@ -266,7 +259,6 @@ class FoodLogRegressionTests(unittest.TestCase):
             meal=None,
             logged_date=today,
             source="manual",
-            confidence_level="manual",
         )
 
         client = TestClient(main.app)

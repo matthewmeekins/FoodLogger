@@ -31,8 +31,6 @@ RESOLVED_ENTRY_NUTRIENT_COLUMNS = [
 
 RESOLVED_ENTRY_EXTRA_COLUMNS = [
     ("created_at", "TEXT"),
-    ("confidence_score", "REAL"),
-    ("confidence_level", "TEXT"),
     ("source", "TEXT"),
     ("assumptions", "TEXT"),  # json
     ("reasoning", "TEXT"),  # OpenAI's component breakdown
@@ -139,7 +137,6 @@ def init_db() -> None:
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             raw_id      INTEGER NOT NULL REFERENCES raw_entries(id),
             parsed_json TEXT NOT NULL,
-            confidence  TEXT NOT NULL,
             created_at  TEXT NOT NULL
         )
     """)
@@ -224,7 +221,7 @@ def insert_raw_entry(input_text: str) -> int:
     return raw_id
 
 
-def insert_parsed_entry(raw_id: int, parsed_json: Dict[str, Any], confidence: str) -> int:
+def insert_parsed_entry(raw_id: int, parsed_json: Dict[str, Any]) -> int:
     """
     Insert parsed LLM output. Returns the parsed_id.
     """
@@ -233,8 +230,8 @@ def insert_parsed_entry(raw_id: int, parsed_json: Dict[str, Any], confidence: st
     
     created_at = datetime.now(UTC).isoformat()
     cursor.execute(
-        "INSERT INTO parsed_entries (raw_id, parsed_json, confidence, created_at) VALUES (?, ?, ?, ?)",
-        (raw_id, json.dumps(parsed_json), confidence, created_at)
+        "INSERT INTO parsed_entries (raw_id, parsed_json, created_at) VALUES (?, ?, ?)",
+        (raw_id, json.dumps(parsed_json), created_at)
     )
     
     parsed_id = cursor.lastrowid
@@ -264,8 +261,6 @@ def insert_resolved_entry(
     iron_mg: Optional[float] = None,
     vitamin_c_mg: Optional[float] = None,
     vitamin_d_iu: Optional[float] = None,
-    confidence_score: Optional[float] = None,
-    confidence_level: Optional[str] = None,
     source: Optional[str] = None,
     assumptions: Optional[List[str]] = None,
     reasoning: Optional[str] = None,
@@ -291,9 +286,9 @@ def insert_resolved_entry(
             sodium_mg, potassium_mg, cholesterol_mg,
             saturated_fat_g, trans_fat_g,
             calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu,
-            confidence_score, confidence_level, source, assumptions, reasoning, openai_response,
+            source, assumptions, reasoning, openai_response,
             quantity_value, quantity_unit, per_unit_calories, per_unit_protein_g, per_unit_carbs_g, per_unit_fat_g) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             parsed_id,
             food_name,
@@ -315,8 +310,6 @@ def insert_resolved_entry(
             iron_mg,
             vitamin_c_mg,
             vitamin_d_iu,
-            confidence_score,
-            confidence_level,
             source,
             json.dumps(assumptions) if assumptions else None,
             reasoning,
@@ -575,7 +568,7 @@ def get_entry_details(entry_id: int) -> Optional[Dict[str, Any]]:
                   r.fiber_g, r.sugar_g, r.sodium_mg, r.potassium_mg,
                   r.cholesterol_mg, r.saturated_fat_g, r.trans_fat_g,
                   r.calcium_mg, r.iron_mg, r.vitamin_c_mg, r.vitamin_d_iu,
-                  r.confidence_score, r.confidence_level, r.source,
+                  r.source,
                   r.assumptions, r.reasoning,
                   rw.input_text AS original_input,
                   rw.timestamp AS original_input_timestamp
@@ -619,7 +612,7 @@ def get_entries_for_date(date: str) -> List[Dict[str, Any]]:
                   sodium_mg, potassium_mg, cholesterol_mg,
                   saturated_fat_g, trans_fat_g,
                   calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu,
-                  confidence_score, confidence_level, source, assumptions
+                  source, assumptions
            FROM resolved_entries 
            WHERE logged_date = ?
            ORDER BY id DESC""",
@@ -790,7 +783,7 @@ def log_favorite(fav_id: int) -> List[int]:
 
     # We need a parsed_entry stub to satisfy the FK
     raw_id = insert_raw_entry(f"[favorite] {fav['name']}")
-    parsed_id = insert_parsed_entry(raw_id, {"confidence": "high", "intents": []}, "high")
+    parsed_id = insert_parsed_entry(raw_id, {"intents": []})
 
     for item in fav["items"]:
         qty = float(item.get("quantity_value") or 1)
@@ -801,7 +794,6 @@ def log_favorite(fav_id: int) -> List[int]:
             meal=item.get("meal"),
             logged_date=today,
             source="favorite",
-            confidence_level="high",
             protein_g=item.get("protein_g"),
             carbs_g=item.get("carbs_g"),
             fat_g=item.get("fat_g"),
@@ -949,7 +941,7 @@ def add_entry_to_today(entry_id: int) -> Optional[int]:
                   sodium_mg, potassium_mg, cholesterol_mg,
                   saturated_fat_g, trans_fat_g,
                   calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu,
-                  confidence_score, confidence_level, source, assumptions, reasoning, openai_response,
+                  source, assumptions, reasoning, openai_response,
                   quantity_value, quantity_unit, per_unit_calories, per_unit_protein_g, per_unit_carbs_g, per_unit_fat_g
            FROM resolved_entries
            WHERE id = ?""",
@@ -971,9 +963,9 @@ def add_entry_to_today(entry_id: int) -> Optional[int]:
             sodium_mg, potassium_mg, cholesterol_mg,
             saturated_fat_g, trans_fat_g,
             calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu,
-            confidence_score, confidence_level, source, assumptions, reasoning, openai_response,
+            source, assumptions, reasoning, openai_response,
             quantity_value, quantity_unit, per_unit_calories, per_unit_protein_g, per_unit_carbs_g, per_unit_fat_g)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             source["parsed_id"],
             source["food_name"],
@@ -995,8 +987,6 @@ def add_entry_to_today(entry_id: int) -> Optional[int]:
             source["iron_mg"],
             source["vitamin_c_mg"],
             source["vitamin_d_iu"],
-            source["confidence_score"],
-            source["confidence_level"],
             source["source"],
             source["assumptions"],
             source["reasoning"],

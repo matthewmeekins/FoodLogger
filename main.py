@@ -103,14 +103,12 @@ async def log_food(request: Request) -> Dict[str, Any]:
         
         # Step 3: Save minimal parsed entry for compatibility
         parsed_json = {
-            "confidence": "high",  # OpenAI estimates are always used
             "logged_date": nutrition_result["logged_date"],
-            "intents": []  # No longer using structured intents
+            "intents": []
         }
         parsed_id = database.insert_parsed_entry(
             raw_id=raw_id,
-            parsed_json=parsed_json,
-            confidence="high"
+            parsed_json=parsed_json
         )
         
         # Step 4: Insert all estimated items into resolved_entries
@@ -145,8 +143,6 @@ async def log_food(request: Request) -> Dict[str, Any]:
                 protein_g=protein_g,
                 carbs_g=carbs_g,
                 fat_g=fat_g,
-                confidence_score=1.0,  # OpenAI estimation is trusted
-                confidence_level="high",
                 source="openai",
                 assumptions=[],
                 reasoning=item.get("reasoning", ""),
@@ -385,8 +381,6 @@ def get_entry_details(entry_id: int) -> Dict[str, Any]:
 
     if details.get("source"):
         lines.append(f"Source: {details['source']}.")
-    if details.get("confidence_level"):
-        lines.append(f"Confidence level: {details['confidence_level']}.")
 
     if details.get("reasoning"):
         lines.append(f"How this was estimated: {details['reasoning']}")
