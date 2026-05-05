@@ -28,5 +28,6 @@ Thumbs.db
 
 # Local-only docs (keep for reference, don't publish)
 IMPLEMENTATION_PLAN.md
+*.local.md
 PROJECT_SUMMARY.md
 APPLE_SHORTCUT_GUIDE.local.md

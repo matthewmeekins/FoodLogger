@@ -63,9 +63,9 @@
             <div class="card">
                 <h2 class="section-title">Daily Entries</h2>
                 <div class="daily-nav date-nav">
-                    <button class="button secondary-btn" onclick="navigateDaily(-1)">&#8592; Prev</button>
+                    <button class="button secondary-btn" onclick="navigateDaily(-1)" aria-label="Previous day" title="Previous day">&#x2039;</button>
                     <input type="date" id="daily-date-picker" class="nav-date-picker" onchange="onDailyDateChange(this.value)" onclick="openDatePicker('daily-date-picker')" onfocus="openDatePicker('daily-date-picker')" onkeydown="return false" onpaste="return false" />
-                    <button class="button secondary-btn" onclick="navigateDaily(1)">Next &#8594;</button>
+                    <button class="button secondary-btn" onclick="navigateDaily(1)" aria-label="Next day" title="Next day">&#x203A;</button>
                 </div>
                 <div class="meal-filter-bar" id="meal-filter-bar">
                     <button class="meal-filter-btn active" data-meal="all" onclick="setMealFilter('all')">All</button>
@@ -96,9 +96,9 @@
             <div class="card">
                 <h2 class="section-title">Weekly Summary</h2>
                 <div class="weekly-nav date-nav">
-                    <button class="button secondary-btn" onclick="navigateWeek(-1)">&#8592; Prev</button>
+                    <button class="button secondary-btn" onclick="navigateWeek(-1)" aria-label="Previous week" title="Previous week">&#x2039;</button>
                     <input type="date" id="weekly-date-picker" class="nav-date-picker" onchange="onWeeklyDateChange(this.value)" onclick="openDatePicker('weekly-date-picker')" onfocus="openDatePicker('weekly-date-picker')" onkeydown="return false" onpaste="return false" />
-                    <button class="button secondary-btn" onclick="navigateWeek(1)">Next &#8594;</button>
+                    <button class="button secondary-btn" onclick="navigateWeek(1)" aria-label="Next week" title="Next week">&#x203A;</button>
                 </div>
                 <div id="weekly-content">
                     <div class="empty-state"><p>Loading...</p></div>

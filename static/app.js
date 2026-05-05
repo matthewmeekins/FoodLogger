@@ -3,6 +3,7 @@
     let _selectedDailyDate = formatIsoDate(new Date());
     let _weeklyStartDate = null;
     const _weeklyDayEntryCache = {};
+    const _entryMap = {};
 
         // Switch between tabs
         function switchTab(tabName, tabButton = null) {
@@ -70,7 +71,12 @@
             return `Qty: ${Math.round(quantity)}`;
         }
 
-        function renderEntryActions(entryId, quantity, includeAddToToday = false) {
+        function renderEntryActions(entry, quantity, includeAddToToday = false) {
+            const entryId = typeof entry === 'object' ? entry.id : entry;
+            const entryJson = typeof entry === 'object' ? JSON.stringify(entry).replace(/'/g, '&#39;') : null;
+            const editBtn = entryJson
+                ? `<button class="icon-btn edit-icon-btn" title="Edit" aria-label="Edit" onclick="openEditModal(${entryJson})">✎</button>`
+                : `<button class="icon-btn edit-icon-btn" title="Edit" aria-label="Edit" onclick="openEditModal(${entryId})">✎</button>`;
             const addToToday = includeAddToToday
                 ? `<button class="add-today-btn" onclick="addToToday(${entryId}); event.stopPropagation();">Add to Today</button>`
                 : '';
@@ -78,8 +84,8 @@
             return `
                 <span class="quantity-controls"><button class="qty-btn" onclick="adjustQuantity(${entryId}, -1, ${quantity}); event.stopPropagation();">-</button><button class="qty-btn" onclick="adjustQuantity(${entryId}, 1, ${quantity}); event.stopPropagation();">+</button></span>
                 ${addToToday}
-                <button class="icon-btn edit-icon-btn" title="Edit" aria-label="Edit" onclick="openEditModal(${entryId})">✎</button>
-                <button class="icon-btn delete-icon-btn" title="Delete" aria-label="Delete" onclick="deleteEntry(${entryId})">🗑</button>
+                ${editBtn}
+                <button class="icon-btn delete-icon-btn" title="Delete" aria-label="Delete" onclick="deleteEntry(${entryId})">✕</button>
             `;
         }
 
@@ -520,6 +526,7 @@
                 const data = await response.json();
 
                 _todayEntries = data.entries || [];
+                _todayEntries.forEach(e => { _entryMap[e.id] = e; });
                 _todayTotalCalories = data.total_calories || 0;
                 renderTodayEntries();
 
@@ -652,6 +659,7 @@
                 const response = await fetch(`${API_BASE}/log/date/${encodeURIComponent(dateStr)}`);
                 const data = await response.json();
                 const entries = data.entries || [];
+                entries.forEach(e => { _entryMap[e.id] = e; });
                 _weeklyDayEntryCache[dateStr] = entries;
                 body.innerHTML = _renderWeeklyDayEntries(entries);
             } catch (error) {
@@ -1019,25 +1027,21 @@
 
 let currentEditEntryId = null;
 
-        function openEditModal(entryId) {
-            currentEditEntryId = entryId;
-            
-            // Fetch current entry data by ID so this works in both Daily and Weekly views.
-            fetch(`${API_BASE}/log/${entryId}/details`)
-                .then(r => r.json())
-                .then(entry => {
-                    if (!entry || entry.id !== entryId) {
-                        return;
-                    }
-                    document.getElementById('edit-food-name').value = entry.food_name || '';
-                    document.getElementById('edit-calories').value = entry.calories || '';
-                    document.getElementById('edit-quantity').value = entry.quantity_value || 1;
-                    document.getElementById('edit-meal').value = entry.meal || '';
-                    document.getElementById('edit-protein').value = entry.protein_g || '';
-                    document.getElementById('edit-carbs').value = entry.carbs_g || '';
-                    document.getElementById('edit-fat').value = entry.fat_g || '';
-                    document.getElementById('edit-modal').classList.add('active');
-                });
+        function openEditModal(entryIdOrData) {
+            const entry = (typeof entryIdOrData === 'object') ? entryIdOrData : _entryMap[entryIdOrData];
+            if (!entry) {
+                console.error('openEditModal: entry not found for id', entryIdOrData);
+                return;
+            }
+            currentEditEntryId = entry.id;
+            document.getElementById('edit-food-name').value = entry.food_name || '';
+            document.getElementById('edit-calories').value = entry.calories || '';
+            document.getElementById('edit-quantity').value = entry.quantity_value || 1;
+            document.getElementById('edit-meal').value = entry.meal || '';
+            document.getElementById('edit-protein').value = entry.protein_g || '';
+            document.getElementById('edit-carbs').value = entry.carbs_g || '';
+            document.getElementById('edit-fat').value = entry.fat_g || '';
+            document.getElementById('edit-modal').classList.add('active');
         }
 
         function closeEditModal() {
