@@ -4,6 +4,7 @@
     let _weeklyStartDate = null;
     const _weeklyDayEntryCache = {};
     const _entryMap = {};
+    let _weeklyLoadRequestId = 0;
 
         // Switch between tabs
         function switchTab(tabName, tabButton = null) {
@@ -78,7 +79,7 @@
                 ? `<button class="icon-btn edit-icon-btn" title="Edit" aria-label="Edit" onclick="openEditModal(${entryJson})">✎</button>`
                 : `<button class="icon-btn edit-icon-btn" title="Edit" aria-label="Edit" onclick="openEditModal(${entryId})">✎</button>`;
             const addToToday = includeAddToToday
-                ? `<button class="add-today-btn" onclick="addToToday(${entryId}); event.stopPropagation();">Add to Today</button>`
+                ? `<button class="icon-btn add-today-btn" title="Add to Today" aria-label="Add to Today" onclick="addToToday(${entryId}); event.stopPropagation();">⊕</button>`
                 : '';
 
             return `
@@ -115,7 +116,7 @@
             if (!dateStr) {
                 return;
             }
-            loadWeekly(_getMondayOf(dateStr));
+            loadWeekly(_getMondayOf(dateStr), { showLoading: false });
         }
 
         function openDatePicker(inputId) {
@@ -405,7 +406,7 @@
                             <div class="fav-card-meta">${meta}</div>
                         </div>
                         <div class="fav-card-actions">
-                            <button class="add-today-btn" onclick="logFavorite(${fav.id}, '${fav.name.replace(/'/g, "\\'")}')">Log</button>
+                            <button class="icon-btn add-today-btn" title="Log" aria-label="Log" onclick="logFavorite(${fav.id}, '${fav.name.replace(/'/g, "\\'")}')">⊕</button>
                             <button class="icon-btn delete-icon-btn" onclick="deleteFavorite(${fav.id}, event)">✕</button>
                         </div>
                     </div>`;
@@ -439,8 +440,8 @@
         }
 
         async function saveEntryAsFavorite(entryId) {
-            // Find entry in loaded today entries
-            const entry = _todayEntries.find(e => e.id === entryId);
+            // Resolve from shared map so this works in both Daily and Weekly views.
+            const entry = _entryMap[entryId] || _todayEntries.find(e => e.id === entryId);
             if (!entry) return;
 
             const name = prompt(`Save "${entry.food_name}" as a favorite. Enter a name:`, entry.food_name);
@@ -594,6 +595,22 @@
             return `weekly-day-${dateStr.replaceAll('-', '')}`;
         }
 
+        function _getOpenWeeklyDayDate() {
+            const openBody = document.querySelector('.weekly-day-body.open');
+            return openBody?.dataset?.date || null;
+        }
+
+        function _setWeeklyNavLoading(isLoading) {
+            const nav = document.querySelector('#weekly-tab .weekly-nav');
+            if (!nav) {
+                return;
+            }
+            nav.classList.toggle('is-loading', isLoading);
+            nav.querySelectorAll('.secondary-btn, .nav-date-picker').forEach(el => {
+                el.disabled = isLoading;
+            });
+        }
+
         function _renderWeeklyDayEntries(entries) {
             if (!entries || entries.length === 0) {
                 return '<div class="weekly-day-empty">No entries for this day.</div>';
@@ -622,7 +639,7 @@
                                 </span>
                             </div>
                             <div class="entry-icon-btns">
-                                <button class="add-today-btn" onclick="addToToday(${entry.id}); event.stopPropagation();">Add to Today</button>
+                                <button class="icon-btn add-today-btn" title="Add to Today" aria-label="Add to Today" onclick="addToToday(${entry.id}); event.stopPropagation();">⊕</button>
                                 <button class="icon-btn edit-icon-btn" title="Edit" aria-label="Edit" onclick="openEditModal(${entry.id})">✎</button>
                                 <button class="icon-btn delete-icon-btn" title="Delete" aria-label="Delete" onclick="deleteEntry(${entry.id})">✕</button>
                                 <button class="icon-btn fav-icon-btn" onclick="saveEntryAsFavorite(${entry.id}); event.stopPropagation();" title="Save as favorite">&#9733;</button>
@@ -672,13 +689,21 @@
             const d = new Date(_weeklyStartDate + 'T12:00:00');
             d.setDate(d.getDate() + direction * 7);
             _weeklyStartDate = formatIsoDate(d);
-            loadWeekly(_weeklyStartDate);
+            loadWeekly(_weeklyStartDate, { showLoading: false });
         }
 
-        async function loadWeekly(startDate) {
+        async function loadWeekly(startDate, options = {}) {
+            const { showLoading = true, preserveOpenDay = false } = options;
             const container = document.getElementById('weekly-content');
             const weeklyPicker = document.getElementById('weekly-date-picker');
-            container.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
+            const prevWeekStart = _weeklyStartDate;
+            const openDayDate = preserveOpenDay ? _getOpenWeeklyDayDate() : null;
+            const requestId = ++_weeklyLoadRequestId;
+
+            if (showLoading && container.dataset.loaded !== '1') {
+                container.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
+            }
+            _setWeeklyNavLoading(true);
 
             if (!startDate) {
                 // Default to current week Monday
@@ -691,8 +716,14 @@
                 const response = await fetch(`${API_BASE}/log/weekly?start_date=${encodeURIComponent(startDate)}`);
                 const data = await response.json();
 
-                // Reset cache each week and sync the picker to week start.
-                Object.keys(_weeklyDayEntryCache).forEach(k => delete _weeklyDayEntryCache[k]);
+                if (requestId !== _weeklyLoadRequestId) {
+                    return;
+                }
+
+                // Reset cache only when week range changes.
+                if (prevWeekStart && prevWeekStart !== data.start_date) {
+                    Object.keys(_weeklyDayEntryCache).forEach(k => delete _weeklyDayEntryCache[k]);
+                }
                 if (weeklyPicker) {
                     weeklyPicker.value = data.start_date;
                 }
@@ -769,16 +800,27 @@
                                     <div class="weekly-day-macros">${macroText}</div>
                                 </div>
                             </button>
-                            <div id="${_weeklyDayElementId(day.date)}" class="weekly-day-body"></div>
+                            <div id="${_weeklyDayElementId(day.date)}" class="weekly-day-body" data-date="${day.date}"></div>
                         </div>
                     `;
                 });
                 disclosureHtml += '</div>';
 
                 container.innerHTML = totalsHtml + chartHtml + disclosureHtml;
+                container.dataset.loaded = '1';
+
+                if (preserveOpenDay && openDayDate && data.days.some(day => day.date === openDayDate)) {
+                    await toggleWeeklyDay(openDayDate);
+                }
 
             } catch (error) {
-                container.innerHTML = `<div class="empty-state"><p>Error loading weekly summary</p></div>`;
+                if (container.dataset.loaded !== '1') {
+                    container.innerHTML = `<div class="empty-state"><p>Error loading weekly summary</p></div>`;
+                }
+            } finally {
+                if (requestId === _weeklyLoadRequestId) {
+                    _setWeeklyNavLoading(false);
+                }
             }
         }
 
@@ -787,7 +829,7 @@
                 loadTodayEntries();
             }
             if (document.getElementById('weekly-tab')?.classList.contains('active')) {
-                loadWeekly(_weeklyStartDate);
+                loadWeekly(_weeklyStartDate, { showLoading: false, preserveOpenDay: true });
             }
         }
 
@@ -805,6 +847,20 @@
                 if (!response.ok) {
                     throw new Error('Failed to delete entry');
                 }
+
+                // Remove from local caches immediately so open weekly panels update without hard reload.
+                delete _entryMap[entryId];
+                _todayEntries = _todayEntries.filter(e => e.id !== entryId);
+                Object.keys(_weeklyDayEntryCache).forEach(dateStr => {
+                    const before = _weeklyDayEntryCache[dateStr].length;
+                    _weeklyDayEntryCache[dateStr] = _weeklyDayEntryCache[dateStr].filter(e => e.id !== entryId);
+                    if (_weeklyDayEntryCache[dateStr].length !== before) {
+                        const body = document.getElementById(_weeklyDayElementId(dateStr));
+                        if (body && body.classList.contains('open')) {
+                            body.innerHTML = _renderWeeklyDayEntries(_weeklyDayEntryCache[dateStr]);
+                        }
+                    }
+                });
 
                 refreshVisibleData();
 
@@ -826,7 +882,31 @@
                     throw new Error('Failed to update quantity');
                 }
 
-                refreshVisibleData();
+                // Update caches in-place — no full page reload
+                if (_entryMap[entryId]) {
+                    _entryMap[entryId].quantity_value = nextQuantity;
+                }
+                const todayIdx = _todayEntries.findIndex(e => e.id === entryId);
+                if (todayIdx >= 0) {
+                    _todayEntries[todayIdx].quantity_value = nextQuantity;
+                }
+                Object.keys(_weeklyDayEntryCache).forEach(dateStr => {
+                    const idx = _weeklyDayEntryCache[dateStr].findIndex(e => e.id === entryId);
+                    if (idx >= 0) {
+                        _weeklyDayEntryCache[dateStr][idx].quantity_value = nextQuantity;
+                        // Re-render only this day's open panel
+                        const body = document.getElementById(_weeklyDayElementId(dateStr));
+                        if (body && body.classList.contains('open')) {
+                            body.innerHTML = _renderWeeklyDayEntries(_weeklyDayEntryCache[dateStr]);
+                        }
+                    }
+                });
+
+                // Re-render daily view in-place if active (no fetch needed)
+                if (document.getElementById('daily-tab')?.classList.contains('active')) {
+                    renderTodayEntries();
+                }
+
             } catch (error) {
                 showStatus(error.message, 'error');
             }
@@ -842,10 +922,7 @@
                     throw new Error('Failed to add entry to today');
                 }
 
-                loadTodayEntries();
-                if (document.getElementById('weekly-tab')?.classList.contains('active')) {
-                    loadWeekly(_weeklyStartDate);
-                }
+                refreshVisibleData();
                 showStatus('Entry added to today', 'success');
             } catch (error) {
                 showStatus(error.message, 'error');

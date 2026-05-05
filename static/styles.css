@@ -185,6 +185,8 @@
             white-space: nowrap;
             transition: border-color 0.18s, color 0.18s, background 0.18s;
             font-family: inherit;
+            line-height: 1;
+            box-sizing: border-box;
         }
 
         /* Square buttons */
@@ -916,6 +918,15 @@
         .date-nav .secondary-btn:first-of-type,
         .date-nav .secondary-btn:last-of-type {
             justify-self: stretch;
+        }
+
+        .weekly-nav.is-loading {
+            opacity: 0.85;
+        }
+
+        .weekly-nav.is-loading .secondary-btn,
+        .weekly-nav.is-loading .nav-date-picker {
+            cursor: progress;
         }
 
         .nav-date-picker {
