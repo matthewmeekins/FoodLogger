@@ -27,8 +27,62 @@ class FoodItem(BaseModel):
     vitamin_d_iu: Optional[float] = None
 
 
+class IntentItem(BaseModel):
+    """Structured intent for a single food item."""
+    brand: Optional[str] = None
+    item: str
+    modifiers: List[str] = []
+    quantity: Optional[str] = None
+    meal: Optional[str] = None
+    unknowns: List[str] = []
+
+
+class StructuredIntent(BaseModel):
+    """Structure returned by LLM for structured parsing."""
+    confidence: str  # "high", "medium", "low"
+    logged_date: str  # YYYY-MM-DD
+    intents: List[IntentItem]
+
+
 class ParsedEntry(BaseModel):
     """Structure returned by LLM after parsing raw input."""
     confidence: str  # "high", "medium", "low"
     logged_date: str  # YYYY-MM-DD inferred from context or today
     foods: List[FoodItem]
+
+
+class UpdateEntryRequest(BaseModel):
+    """Request to update a specific entry field."""
+    food_name: Optional[str] = None
+    calories: Optional[int] = None
+    quantity_value: Optional[float] = None
+    quantity_unit: Optional[str] = None
+    meal: Optional[str] = None
+    logged_date: Optional[str] = None
+    protein_g: Optional[float] = None
+    carbs_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    reasoning: Optional[str] = None
+
+
+class FavoriteItem(BaseModel):
+    """A single item stored inside a favorite."""
+    food_name: str
+    calories: Optional[int] = None
+    meal: Optional[str] = None
+    protein_g: Optional[float] = None
+    carbs_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    reasoning: Optional[str] = None
+    quantity_value: Optional[float] = 1.0
+    quantity_unit: Optional[str] = None
+    per_unit_calories: Optional[float] = None
+    per_unit_protein_g: Optional[float] = None
+    per_unit_carbs_g: Optional[float] = None
+    per_unit_fat_g: Optional[float] = None
+
+
+class FavoriteCreateRequest(BaseModel):
+    """Request to create a new favorite."""
+    name: str
+    items: List[FavoriteItem]

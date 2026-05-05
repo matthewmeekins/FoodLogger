@@ -4,84 +4,205 @@ OpenAI API integration for parsing food entries.
 
 import os
 import json
-from datetime import date, datetime
+import time
+from datetime import datetime
 from openai import OpenAI
-from models import ParsedEntry
 
 
-SYSTEM_PROMPT = """You are a food logging assistant. Your job is to extract structured food data
-from a user's natural language input and provide reasonable calorie estimates.
+OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "20"))
+OPENAI_MAX_RETRIES = max(0, int(os.getenv("OPENAI_MAX_RETRIES", "1")))
+
+LLM_USAGE = {
+  "requests": 0,
+  "retries": 0,
+  "prompt_tokens": 0,
+  "completion_tokens": 0,
+  "total_tokens": 0,
+}
+
+
+def _record_usage(response) -> None:
+  usage = getattr(response, "usage", None)
+  if usage is None:
+    return
+
+  LLM_USAGE["requests"] += 1
+  LLM_USAGE["prompt_tokens"] += int(getattr(usage, "prompt_tokens", 0) or 0)
+  LLM_USAGE["completion_tokens"] += int(getattr(usage, "completion_tokens", 0) or 0)
+  LLM_USAGE["total_tokens"] += int(getattr(usage, "total_tokens", 0) or 0)
+
+
+def _create_client(api_key: str) -> OpenAI:
+  return OpenAI(api_key=api_key, timeout=OPENAI_TIMEOUT_SECONDS, max_retries=0)
+
+
+def _chat_completion_with_retry(*, client: OpenAI, model: str, messages: list[dict], response_format: dict | None = None, temperature: float | None = None, max_tokens: int | None = None):
+  last_error = None
+
+  for attempt in range(OPENAI_MAX_RETRIES + 1):
+    try:
+      kwargs = {
+        "model": model,
+        "messages": messages,
+      }
+      if response_format is not None:
+        kwargs["response_format"] = response_format
+      if temperature is not None:
+        kwargs["temperature"] = temperature
+      if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+
+      response = client.chat.completions.create(**kwargs)
+      _record_usage(response)
+      return response
+    except Exception as exc:
+      last_error = exc
+      if attempt < OPENAI_MAX_RETRIES:
+        LLM_USAGE["retries"] += 1
+        time.sleep(0.25 * (attempt + 1))
+
+  raise last_error
+
+
+def estimate_nutrition(input_text: str, api_key: str, current_time: datetime | None = None) -> dict:
+    """
+    Use OpenAI to directly estimate calories and macros from natural language input.
+    Returns structured nutrition data ready for database logging.
+    
+    Returns:
+    {
+        "items": [
+            {
+                "name": str,
+                "calories": int,
+          "quantity_value": float,
+          "quantity_unit": str | None,
+                "protein_g": float | None,
+                "carbs_g": float | None,
+                "fat_g": float | None,
+                "meal": str | None,
+                "reasoning": str  # Component breakdown explanation
+            }
+        ],
+        "logged_date": str  # YYYY-MM-DD
+    }
+    """
+    if current_time is None:
+        current_time = datetime.now()
+    
+    today_date = current_time.date().isoformat()
+    current_hour = current_time.hour
+    
+    client = _create_client(api_key)
+    
+    system_prompt = """You are a nutrition estimation assistant. Your job is to estimate calories and macronutrients for food items from natural language input.
 
 Return a JSON object with this structure:
 {
-  "confidence": "high" | "medium" | "low",
-  "logged_date": "YYYY-MM-DD",
-  "foods": [
+  "items": [
     {
-      "food_name": "string",
+      "name": "string",
       "calories": integer,
-      "meal": "breakfast" | "lunch" | "dinner" | "snack" | null
+      "quantity_value": float,
+      "quantity_unit": "string" or null,
+      "protein_g": float or null,
+      "carbs_g": float or null,
+      "fat_g": float or null,
+      "meal": "breakfast" | "lunch" | "dinner" | "snack" | null,
+      "reasoning": "string explaining the breakdown"
     }
-  ]
+  ],
+  "logged_date": "YYYY-MM-DD"
 }
 
-Rules for meal assignment:
-- If explicitly stated (e.g., "for breakfast", "at lunch"), use that
-- If time context given (e.g., "this morning", "at noon"), infer from that
-- If current time is provided and no context given, infer based on time:
-  * 5 AM - 10:30 AM → breakfast
-  * 10:30 AM - 2:30 PM → lunch  
-  * 2:30 PM - 8 PM → dinner
-  * 8 PM - 5 AM → snack
-- If clearly a snack item (chips, candy, cookie) and no meal context → "snack"
-- Otherwise, use null
+Critical rules:
+1. ALWAYS provide calorie estimates based on typical portions unless specific quantities given
+2. Include quantity_value as a positive number for each item. Use 1 if not specified.
+3. Include quantity_unit where obvious (e.g., bottle, can, slice, cup), otherwise null.
+4. Estimate macros (protein, carbs, fat in grams) when possible, use null if too uncertain
+5. For compound items (e.g., "pizza with sauce, cheese, pepperoni"), provide component breakdown in reasoning
+6. For restaurant/chain food, use typical menu item calories
+7. Split multiple distinct foods into separate items
+8. In reasoning, show your calculation (e.g., "2oz sauce ~30 cal, naan ~220 cal, cheese ~110 cal, 14 pepperoni ~140 cal = 500 cal total")
 
-Other Rules:
-- Always provide calorie estimates based on standard portion sizes and nutritional data
-- Use typical serving sizes unless quantities are specified (e.g., "2 eggs" = 140 cal, "1 egg" = 70 cal)
-- Set confidence to "high" for common foods with clear portions
-- Set confidence to "medium" for items where portion size is unclear
-- Set confidence to "low" only if the food is very unusual or ambiguous
-- logged_date should be today's date unless the user implies otherwise
-- Be consistent with standard calorie databases (e.g., USDA data)
+Meal assignment rules (apply in priority order):
+1. Explicit user mention wins: "for breakfast", "at lunch", "dinner", "snack" → use that meal
+2. If no explicit mention, use current hour to infer:
+   - 5–10 (5am–10:59am) → breakfast
+   - 11–13 (11am–1:59pm) → lunch
+   - 17–21 (5pm–9:59pm) → dinner
+   - All other hours (2–4pm, 10pm–4am) → snack
+3. Use null ONLY if current time is not provided and user didn't mention a meal
 
 Examples:
-- "oatmeal with banana for breakfast" → oatmeal (150 cal, breakfast), banana (105 cal, breakfast)
-- "chicken sandwich" at 12 PM → ~450 cal, lunch
-- "2 eggs and toast" with no context → eggs (140 cal, null), toast (80 cal, null)
-- "had chips" at 3 PM → 150 cal, snack"""
+1. "I had a banana" → name: "Banana", calories: 105, quantity_value: 1, quantity_unit: null, protein_g: 1.3, carbs_g: 27, fat_g: 0.4, reasoning: "Medium banana, standard USDA values"
 
+2. "20 Zaxby's wings" → name: "Zaxby's Chicken Wings", calories: 1800, quantity_value: 20, quantity_unit: "wing", protein_g: 120, carbs_g: 20, fat_g: 140, reasoning: "Restaurant wings typically ~90 cal each, 20 pieces = 1800 cal. High fat from frying, moderate protein, minimal carbs from breading."
 
-def parse_food_entry(input_text: str, api_key: str) -> ParsedEntry:
-    """
-    Send input text to OpenAI and return validated ParsedEntry.
-    Raises exception if API call fails or validation fails.
-    """
-    client = OpenAI(api_key=api_key)
-    
-    # Get today's date and current time for context
-    today = date.today().isoformat()
-    now = datetime.now()
-    current_time = now.strftime("%I:%M %p")  # e.g., "02:30 PM"
-    
-    # Prepare user message with date and time context
-    user_message = f"Today's date is {today}.\nCurrent time is {current_time}.\n\nUser input: {input_text}"
-    
-    # Call OpenAI API
-    response = client.chat.completions.create(
+3. "Small pizza with 2oz sauce, gluten-free naan, mexican cheese, 14 pepperoni" → name: "Homemade Naan Pizza", calories: 500, quantity_value: 1, quantity_unit: "pizza", protein_g: 25, carbs_g: 45, fat_g: 22, reasoning: "2oz pizza sauce (~30 cal, 1g protein, 7g carbs, 0g fat), gluten-free naan (~220 cal, 8g protein, 30g carbs, 6g fat), Mexican cheese blend ~1/4 cup (~110 cal, 8g protein, 1g carbs, 9g fat), 14 pepperoni slices (~140 cal, 8g protein, 1g carbs, 12g fat). Total: 500 cal, 25g protein, 39g carbs, 27g fat"
+
+Be as accurate as possible. When in doubt, use standard nutritional database values (USDA, restaurant menus, food labels)."""
+
+    user_prompt = f"""Current time: {current_time.strftime('%I:%M %p')} (hour: {current_hour})
+Today's date: {today_date}
+
+User input: {input_text}
+
+Estimate the nutrition for all foods mentioned."""
+
+    response = _chat_completion_with_retry(
+        client=client,
         model="gpt-4o",
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_message}
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
         ],
-        response_format={"type": "json_object"}
+        response_format={"type": "json_object"},
+        temperature=0.3,
     )
     
-    # Extract JSON from response
+    _record_usage(response)
+    
     content = response.choices[0].message.content
-    parsed_json = json.loads(content)
+    if not content:
+        raise ValueError("Empty response from OpenAI")
     
-    # Validate with Pydantic
-    parsed_entry = ParsedEntry(**parsed_json)
+    result = json.loads(content)
     
-    return parsed_entry
+    # Validate and clean the response
+    if "items" not in result or not isinstance(result["items"], list):
+        raise ValueError("Invalid response structure from OpenAI")
+    
+    # Ensure each item has required fields
+    for item in result["items"]:
+        if "name" not in item or "calories" not in item:
+            raise ValueError(f"Missing required fields in item: {item}")
+
+        # Normalize quantity fields for downstream scaling/edit operations.
+        quantity_value = item.get("quantity_value", 1)
+        try:
+            quantity_value = float(quantity_value)
+        except (TypeError, ValueError):
+            quantity_value = 1.0
+        if quantity_value <= 0:
+            quantity_value = 1.0
+        item["quantity_value"] = quantity_value
+
+        quantity_unit = item.get("quantity_unit")
+        if quantity_unit is not None:
+            quantity_unit = str(quantity_unit).strip() or None
+        item["quantity_unit"] = quantity_unit
+        
+        # Ensure calories is an integer
+        if not isinstance(item["calories"], int):
+            item["calories"] = int(item["calories"])
+        
+        # Ensure reasoning exists
+        if "reasoning" not in item:
+            item["reasoning"] = f"Estimated {item['calories']} calories for {item['name']}"
+    
+    # Ensure logged_date exists
+    if "logged_date" not in result:
+        result["logged_date"] = today_date
+    
+    return result

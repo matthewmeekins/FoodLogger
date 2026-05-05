@@ -4,7 +4,7 @@ Handles SQLite connection and all database operations.
 """
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, date, timedelta, UTC
 from typing import Optional, List, Dict, Any
 import json
 
@@ -29,10 +29,24 @@ RESOLVED_ENTRY_NUTRIENT_COLUMNS = [
     ("vitamin_d_iu", "REAL"),
 ]
 
+RESOLVED_ENTRY_EXTRA_COLUMNS = [
+    ("created_at", "TEXT"),
+    ("source", "TEXT"),
+    ("assumptions", "TEXT"),  # json
+    ("reasoning", "TEXT"),  # OpenAI's component breakdown
+    ("openai_response", "TEXT"),  # Full OpenAI JSON response for audit trail
+    ("quantity_value", "REAL NOT NULL DEFAULT 1.0"),
+    ("quantity_unit", "TEXT"),
+    ("per_unit_calories", "REAL"),
+    ("per_unit_protein_g", "REAL"),
+    ("per_unit_carbs_g", "REAL"),
+    ("per_unit_fat_g", "REAL"),
+]
+
 
 def get_connection() -> sqlite3.Connection:
     """Get a database connection with row factory enabled."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -42,11 +56,85 @@ def _ensure_resolved_entry_columns(cursor: sqlite3.Cursor) -> None:
     cursor.execute("PRAGMA table_info(resolved_entries)")
     existing_columns = {row[1] for row in cursor.fetchall()}
 
-    for column_name, column_type in RESOLVED_ENTRY_NUTRIENT_COLUMNS:
+    for column_name, column_type in RESOLVED_ENTRY_NUTRIENT_COLUMNS + RESOLVED_ENTRY_EXTRA_COLUMNS:
         if column_name not in existing_columns:
             cursor.execute(
                 f"ALTER TABLE resolved_entries ADD COLUMN {column_name} {column_type}"
             )
+
+
+def _migrate_parsed_entries_drop_confidence(cursor: sqlite3.Cursor) -> None:
+    """Remove the NOT NULL confidence column from parsed_entries (legacy schema)."""
+    cursor.execute("PRAGMA table_info(parsed_entries)")
+    cols = [row[1] for row in cursor.fetchall()]
+    if "confidence" not in cols:
+        return  # already migrated
+    cursor.executescript("""
+        CREATE TABLE IF NOT EXISTS parsed_entries_new (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            raw_id      INTEGER NOT NULL REFERENCES raw_entries(id),
+            parsed_json TEXT NOT NULL,
+            created_at  TEXT NOT NULL
+        );
+        INSERT INTO parsed_entries_new (id, raw_id, parsed_json, created_at)
+            SELECT id, raw_id, parsed_json, created_at FROM parsed_entries;
+        DROP TABLE parsed_entries;
+        ALTER TABLE parsed_entries_new RENAME TO parsed_entries;
+    """)
+
+
+def _backfill_resolved_entry_created_at(cursor: sqlite3.Cursor) -> None:
+    """Backfill missing resolved entry timestamps for older rows."""
+    cursor.execute(
+        """UPDATE resolved_entries
+           SET created_at = COALESCE(created_at, logged_date || 'T12:00:00')
+           WHERE created_at IS NULL OR created_at = ''"""
+    )
+
+
+def _backfill_quantity_fields(cursor: sqlite3.Cursor) -> None:
+    """Backfill quantity/per-unit fields for legacy rows."""
+    cursor.execute(
+       """UPDATE resolved_entries
+         SET quantity_value = COALESCE(quantity_value, 1.0)
+         WHERE quantity_value IS NULL OR quantity_value <= 0"""
+    )
+    cursor.execute(
+       """UPDATE resolved_entries
+         SET per_unit_calories = CASE
+             WHEN per_unit_calories IS NULL THEN
+                CASE WHEN quantity_value > 0 THEN CAST(calories AS REAL) / quantity_value
+                    ELSE CAST(calories AS REAL) END
+             ELSE per_unit_calories
+         END,
+         per_unit_protein_g = CASE
+             WHEN per_unit_protein_g IS NULL THEN
+                CASE WHEN quantity_value > 0 THEN protein_g / quantity_value
+                    ELSE protein_g END
+             ELSE per_unit_protein_g
+         END,
+         per_unit_carbs_g = CASE
+             WHEN per_unit_carbs_g IS NULL THEN
+                CASE WHEN quantity_value > 0 THEN carbs_g / quantity_value
+                    ELSE carbs_g END
+             ELSE per_unit_carbs_g
+         END,
+         per_unit_fat_g = CASE
+             WHEN per_unit_fat_g IS NULL THEN
+                CASE WHEN quantity_value > 0 THEN fat_g / quantity_value
+                    ELSE fat_g END
+             ELSE per_unit_fat_g
+         END
+         WHERE calories IS NOT NULL OR protein_g IS NOT NULL OR carbs_g IS NOT NULL OR fat_g IS NOT NULL"""
+    )
+
+
+def _ensure_indexes(cursor: sqlite3.Cursor) -> None:
+    """Create indexes for hot query paths."""
+    cursor.execute(
+        """CREATE INDEX IF NOT EXISTS idx_resolved_entries_logged_date_id
+           ON resolved_entries(logged_date, id DESC)"""
+    )
 
 
 def init_db() -> None:
@@ -69,7 +157,6 @@ def init_db() -> None:
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             raw_id      INTEGER NOT NULL REFERENCES raw_entries(id),
             parsed_json TEXT NOT NULL,
-            confidence  TEXT NOT NULL,
             created_at  TEXT NOT NULL
         )
     """)
@@ -83,6 +170,7 @@ def init_db() -> None:
             calories    INTEGER,
             meal        TEXT,
             logged_date TEXT NOT NULL,
+            created_at  TEXT NOT NULL,
             protein_g REAL,
             carbs_g REAL,
             fat_g REAL,
@@ -100,8 +188,35 @@ def init_db() -> None:
         )
     """)
 
+    # entry_edits: audit trail for entry modifications
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS entry_edits (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            entry_id    INTEGER NOT NULL REFERENCES resolved_entries(id),
+            field_name  TEXT NOT NULL,
+            old_value   TEXT,
+            new_value   TEXT,
+            edited_at   TEXT NOT NULL
+        )
+    """)
+
+    # favorites: saved meals/items for quick re-logging
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS favorites (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT NOT NULL,
+            items_json  TEXT NOT NULL,
+            created_at  TEXT NOT NULL
+        )
+    """)
+
     # Ensure existing databases are upgraded with any missing nutrient columns.
+    cursor.execute("PRAGMA journal_mode=WAL")  # allows concurrent reads during writes
+    _migrate_parsed_entries_drop_confidence(cursor)
     _ensure_resolved_entry_columns(cursor)
+    _ensure_indexes(cursor)
+    _backfill_resolved_entry_created_at(cursor)
+    _backfill_quantity_fields(cursor)
     
     conn.commit()
     conn.close()
@@ -115,7 +230,7 @@ def insert_raw_entry(input_text: str) -> int:
     conn = get_connection()
     cursor = conn.cursor()
     
-    timestamp = datetime.utcnow().isoformat()
+    timestamp = datetime.now(UTC).isoformat()
     cursor.execute(
         "INSERT INTO raw_entries (timestamp, input_text) VALUES (?, ?)",
         (timestamp, input_text)
@@ -128,17 +243,17 @@ def insert_raw_entry(input_text: str) -> int:
     return raw_id
 
 
-def insert_parsed_entry(raw_id: int, parsed_json: Dict[str, Any], confidence: str) -> int:
+def insert_parsed_entry(raw_id: int, parsed_json: Dict[str, Any]) -> int:
     """
     Insert parsed LLM output. Returns the parsed_id.
     """
     conn = get_connection()
     cursor = conn.cursor()
     
-    created_at = datetime.utcnow().isoformat()
+    created_at = datetime.now(UTC).isoformat()
     cursor.execute(
-        "INSERT INTO parsed_entries (raw_id, parsed_json, confidence, created_at) VALUES (?, ?, ?, ?)",
-        (raw_id, json.dumps(parsed_json), confidence, created_at)
+        "INSERT INTO parsed_entries (raw_id, parsed_json, created_at) VALUES (?, ?, ?)",
+        (raw_id, json.dumps(parsed_json), created_at)
     )
     
     parsed_id = cursor.lastrowid
@@ -168,27 +283,41 @@ def insert_resolved_entry(
     iron_mg: Optional[float] = None,
     vitamin_c_mg: Optional[float] = None,
     vitamin_d_iu: Optional[float] = None,
+    source: Optional[str] = None,
+    assumptions: Optional[List[str]] = None,
+    reasoning: Optional[str] = None,
+    openai_response: Optional[str] = None,
+    quantity_value: float = 1.0,
+    quantity_unit: Optional[str] = None,
+    per_unit_calories: Optional[float] = None,
+    per_unit_protein_g: Optional[float] = None,
+    per_unit_carbs_g: Optional[float] = None,
+    per_unit_fat_g: Optional[float] = None,
 ) -> int:
     """
     Insert a single resolved food item. Returns the resolved_id.
     """
     conn = get_connection()
     cursor = conn.cursor()
+    created_at = datetime.now(UTC).isoformat()
     
     cursor.execute(
         """INSERT INTO resolved_entries 
-           (parsed_id, food_name, calories, meal, logged_date,
+           (parsed_id, food_name, calories, meal, logged_date, created_at,
             protein_g, carbs_g, fat_g, fiber_g, sugar_g,
             sodium_mg, potassium_mg, cholesterol_mg,
             saturated_fat_g, trans_fat_g,
-            calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu,
+            source, assumptions, reasoning, openai_response,
+            quantity_value, quantity_unit, per_unit_calories, per_unit_protein_g, per_unit_carbs_g, per_unit_fat_g) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             parsed_id,
             food_name,
             calories,
             meal,
             logged_date,
+            created_at,
             protein_g,
             carbs_g,
             fat_g,
@@ -203,6 +332,16 @@ def insert_resolved_entry(
             iron_mg,
             vitamin_c_mg,
             vitamin_d_iu,
+            source,
+            json.dumps(assumptions) if assumptions else None,
+            reasoning,
+            openai_response,
+            quantity_value,
+            quantity_unit,
+            per_unit_calories,
+            per_unit_protein_g,
+            per_unit_carbs_g,
+            per_unit_fat_g,
         )
     )
     
@@ -213,6 +352,274 @@ def insert_resolved_entry(
     return resolved_id
 
 
+def _log_edit(cursor: sqlite3.Cursor, entry_id: int, field_name: str, old_value: Any, new_value: Any) -> None:
+    """Log a single field edit to the entry_edits table."""
+    edited_at = datetime.now(UTC).isoformat()
+    cursor.execute(
+        """INSERT INTO entry_edits (entry_id, field_name, old_value, new_value, edited_at)
+           VALUES (?, ?, ?, ?, ?)""",
+        (entry_id, field_name, str(old_value) if old_value is not None else None, 
+         str(new_value) if new_value is not None else None, edited_at)
+    )
+
+
+def update_resolved_entry(
+    entry_id: int,
+    *,
+    food_name: Optional[str] = None,
+    calories: Optional[int] = None,
+    quantity_value: Optional[float] = None,
+    quantity_unit: Optional[str] = None,
+    meal: Optional[str] = None,
+    logged_date: Optional[str] = None,
+    protein_g: Optional[float] = None,
+    carbs_g: Optional[float] = None,
+    fat_g: Optional[float] = None,
+    reasoning: Optional[str] = None,
+) -> bool:
+    """
+    Update a resolved entry with edit history tracking.
+    Returns True if updated, False if entry not found.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Get current values for audit trail
+    cursor.execute(
+        """SELECT food_name, calories, quantity_value, quantity_unit, meal, logged_date,
+                  protein_g, carbs_g, fat_g, reasoning,
+                  per_unit_calories, per_unit_protein_g, per_unit_carbs_g, per_unit_fat_g
+           FROM resolved_entries WHERE id = ?""",
+        (entry_id,)
+    )
+    row = cursor.fetchone()
+    
+    if not row:
+        conn.close()
+        return False
+    
+    current = dict(row)
+    updates: List[str] = []
+    values: List[Any] = []
+    
+    # Track changes and build update query
+    if food_name is not None and food_name != current["food_name"]:
+        updates.append("food_name = ?")
+        values.append(food_name)
+        _log_edit(cursor, entry_id, "food_name", current["food_name"], food_name)
+    
+    if calories is not None and calories != current["calories"]:
+        updates.append("calories = ?")
+        values.append(calories)
+        _log_edit(cursor, entry_id, "calories", current["calories"], calories)
+        current_quantity = float(current.get("quantity_value") or 1.0)
+        if current_quantity <= 0:
+            current_quantity = 1.0
+        updates.append("per_unit_calories = ?")
+        values.append(float(calories) / current_quantity)
+
+    if quantity_value is not None:
+        new_quantity = float(quantity_value)
+        if new_quantity <= 0:
+            new_quantity = 1.0
+        if new_quantity != float(current.get("quantity_value") or 1.0):
+            updates.append("quantity_value = ?")
+            values.append(new_quantity)
+            _log_edit(cursor, entry_id, "quantity_value", current.get("quantity_value"), new_quantity)
+
+            per_unit_calories = current.get("per_unit_calories")
+            per_unit_protein_g = current.get("per_unit_protein_g")
+            per_unit_carbs_g = current.get("per_unit_carbs_g")
+            per_unit_fat_g = current.get("per_unit_fat_g")
+
+            if per_unit_calories is None and current.get("calories") is not None:
+                old_quantity = float(current.get("quantity_value") or 1.0)
+                if old_quantity <= 0:
+                    old_quantity = 1.0
+                per_unit_calories = float(current["calories"]) / old_quantity
+                updates.append("per_unit_calories = ?")
+                values.append(per_unit_calories)
+
+            if per_unit_protein_g is None and current.get("protein_g") is not None:
+                old_quantity = float(current.get("quantity_value") or 1.0)
+                if old_quantity <= 0:
+                    old_quantity = 1.0
+                per_unit_protein_g = float(current["protein_g"]) / old_quantity
+                updates.append("per_unit_protein_g = ?")
+                values.append(per_unit_protein_g)
+
+            if per_unit_carbs_g is None and current.get("carbs_g") is not None:
+                old_quantity = float(current.get("quantity_value") or 1.0)
+                if old_quantity <= 0:
+                    old_quantity = 1.0
+                per_unit_carbs_g = float(current["carbs_g"]) / old_quantity
+                updates.append("per_unit_carbs_g = ?")
+                values.append(per_unit_carbs_g)
+
+            if per_unit_fat_g is None and current.get("fat_g") is not None:
+                old_quantity = float(current.get("quantity_value") or 1.0)
+                if old_quantity <= 0:
+                    old_quantity = 1.0
+                per_unit_fat_g = float(current["fat_g"]) / old_quantity
+                updates.append("per_unit_fat_g = ?")
+                values.append(per_unit_fat_g)
+
+            if per_unit_calories is not None:
+                recalculated_calories = int(round(float(per_unit_calories) * new_quantity))
+                if recalculated_calories != current.get("calories"):
+                    updates.append("calories = ?")
+                    values.append(recalculated_calories)
+                    _log_edit(cursor, entry_id, "calories", current.get("calories"), recalculated_calories)
+
+            if per_unit_protein_g is not None:
+                recalculated_protein = float(per_unit_protein_g) * new_quantity
+                if recalculated_protein != current.get("protein_g"):
+                    updates.append("protein_g = ?")
+                    values.append(recalculated_protein)
+                    _log_edit(cursor, entry_id, "protein_g", current.get("protein_g"), recalculated_protein)
+
+            if per_unit_carbs_g is not None:
+                recalculated_carbs = float(per_unit_carbs_g) * new_quantity
+                if recalculated_carbs != current.get("carbs_g"):
+                    updates.append("carbs_g = ?")
+                    values.append(recalculated_carbs)
+                    _log_edit(cursor, entry_id, "carbs_g", current.get("carbs_g"), recalculated_carbs)
+
+            if per_unit_fat_g is not None:
+                recalculated_fat = float(per_unit_fat_g) * new_quantity
+                if recalculated_fat != current.get("fat_g"):
+                    updates.append("fat_g = ?")
+                    values.append(recalculated_fat)
+                    _log_edit(cursor, entry_id, "fat_g", current.get("fat_g"), recalculated_fat)
+
+    if quantity_unit is not None and quantity_unit != current.get("quantity_unit"):
+        updates.append("quantity_unit = ?")
+        values.append(quantity_unit)
+        _log_edit(cursor, entry_id, "quantity_unit", current.get("quantity_unit"), quantity_unit)
+    
+    if meal is not None and meal != current["meal"]:
+        updates.append("meal = ?")
+        values.append(meal)
+        _log_edit(cursor, entry_id, "meal", current["meal"], meal)
+    
+    if logged_date is not None and logged_date != current["logged_date"]:
+        updates.append("logged_date = ?")
+        values.append(logged_date)
+        _log_edit(cursor, entry_id, "logged_date", current["logged_date"], logged_date)
+    
+    if protein_g is not None and protein_g != current["protein_g"]:
+        updates.append("protein_g = ?")
+        values.append(protein_g)
+        _log_edit(cursor, entry_id, "protein_g", current["protein_g"], protein_g)
+        current_quantity = float(current.get("quantity_value") or 1.0)
+        if current_quantity <= 0:
+            current_quantity = 1.0
+        updates.append("per_unit_protein_g = ?")
+        values.append(float(protein_g) / current_quantity)
+    
+    if carbs_g is not None and carbs_g != current["carbs_g"]:
+        updates.append("carbs_g = ?")
+        values.append(carbs_g)
+        _log_edit(cursor, entry_id, "carbs_g", current["carbs_g"], carbs_g)
+        current_quantity = float(current.get("quantity_value") or 1.0)
+        if current_quantity <= 0:
+            current_quantity = 1.0
+        updates.append("per_unit_carbs_g = ?")
+        values.append(float(carbs_g) / current_quantity)
+    
+    if fat_g is not None and fat_g != current["fat_g"]:
+        updates.append("fat_g = ?")
+        values.append(fat_g)
+        _log_edit(cursor, entry_id, "fat_g", current["fat_g"], fat_g)
+        current_quantity = float(current.get("quantity_value") or 1.0)
+        if current_quantity <= 0:
+            current_quantity = 1.0
+        updates.append("per_unit_fat_g = ?")
+        values.append(float(fat_g) / current_quantity)
+    
+    if reasoning is not None and reasoning != current["reasoning"]:
+        updates.append("reasoning = ?")
+        values.append(reasoning)
+        _log_edit(cursor, entry_id, "reasoning", current["reasoning"], reasoning)
+    
+    # Only update if there are changes
+    if not updates:
+        conn.close()
+        return True
+    
+    values.append(entry_id)
+    cursor.execute(
+        f"UPDATE resolved_entries SET {', '.join(updates)} WHERE id = ?",
+        values
+    )
+    
+    conn.commit()
+    conn.close()
+    
+    return True
+
+
+def get_entry_edits(entry_id: int) -> List[Dict[str, Any]]:
+    """Get edit history for an entry."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute(
+        """SELECT id, field_name, old_value, new_value, edited_at
+           FROM entry_edits
+           WHERE entry_id = ?
+           ORDER BY edited_at DESC""",
+        (entry_id,)
+    )
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    return [dict(row) for row in rows]
+
+
+def get_entry_details(entry_id: int) -> Optional[Dict[str, Any]]:
+    """Get full entry details with source journal input for user-facing plain-language disclosure."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """SELECT r.id, r.food_name, r.calories, r.meal, r.logged_date, r.created_at,
+                  r.quantity_value, r.quantity_unit,
+                  r.protein_g, r.carbs_g, r.fat_g,
+                  r.fiber_g, r.sugar_g, r.sodium_mg, r.potassium_mg,
+                  r.cholesterol_mg, r.saturated_fat_g, r.trans_fat_g,
+                  r.calcium_mg, r.iron_mg, r.vitamin_c_mg, r.vitamin_d_iu,
+                  r.source,
+                  r.assumptions, r.reasoning,
+                  rw.input_text AS original_input,
+                  rw.timestamp AS original_input_timestamp
+           FROM resolved_entries r
+           LEFT JOIN parsed_entries p ON p.id = r.parsed_id
+           LEFT JOIN raw_entries rw ON rw.id = p.raw_id
+           WHERE r.id = ?""",
+        (entry_id,),
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    details = dict(row)
+    assumptions = details.get("assumptions")
+    if isinstance(assumptions, str):
+        try:
+            parsed = json.loads(assumptions)
+            details["assumptions"] = parsed if isinstance(parsed, list) else []
+        except json.JSONDecodeError:
+            details["assumptions"] = []
+    elif assumptions is None:
+        details["assumptions"] = []
+
+    return details
+
+
 def get_entries_for_date(date: str) -> List[Dict[str, Any]]:
     """
     Get all resolved entries for a specific date (YYYY-MM-DD).
@@ -221,47 +628,292 @@ def get_entries_for_date(date: str) -> List[Dict[str, Any]]:
     cursor = conn.cursor()
     
     cursor.execute(
-        """SELECT id, food_name, calories, meal, logged_date,
+        """SELECT id, food_name, calories, meal, logged_date, created_at,
+                  quantity_value, quantity_unit,
                   protein_g, carbs_g, fat_g, fiber_g, sugar_g,
                   sodium_mg, potassium_mg, cholesterol_mg,
                   saturated_fat_g, trans_fat_g,
-                  calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu
+                  calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu,
+                  source, assumptions
            FROM resolved_entries 
            WHERE logged_date = ?
-           ORDER BY id""",
+           ORDER BY id DESC""",
         (date,)
     )
     
     rows = cursor.fetchall()
     conn.close()
-    
-    return [dict(row) for row in rows]
+
+    entries: List[Dict[str, Any]] = []
+    for row in rows:
+        entry = dict(row)
+        assumptions = entry.get("assumptions")
+        if isinstance(assumptions, str):
+            try:
+                parsed = json.loads(assumptions)
+                entry["assumptions"] = parsed if isinstance(parsed, list) else []
+            except json.JSONDecodeError:
+                entry["assumptions"] = []
+        elif assumptions is None:
+            entry["assumptions"] = []
+        entries.append(entry)
+
+    return entries
 
 
 def get_summary_last_n_days(days: int = 7) -> List[Dict[str, Any]]:
     """
-    Get total calories grouped by date for the last N days.
-    Returns list of {date, total_calories, entry_count}.
+    Get total calories and macros grouped by date for the last N days.
+    Returns list of {date, total_calories, total_protein_g, total_carbs_g, total_fat_g, entry_count}.
+    Uses local date (not SQLite's UTC date('now')) to avoid timezone drift.
+    """
+    today = date.today()
+    start = (today - timedelta(days=days - 1)).isoformat()
+    end = today.isoformat()
+
+    return get_summary_by_date_range(start, end)
+
+
+def get_summary_by_date_range(start_date: str, end_date: str) -> List[Dict[str, Any]]:
+    """
+    Get total calories and macros grouped by date for an inclusive date range.
+    Returns list of {date, total_calories, total_protein_g, total_carbs_g, total_fat_g, entry_count}.
     """
     conn = get_connection()
     cursor = conn.cursor()
-    
+
     cursor.execute(
-        """SELECT 
+        """SELECT
                logged_date as date,
                SUM(calories) as total_calories,
+               SUM(protein_g) as total_protein_g,
+               SUM(carbs_g) as total_carbs_g,
+               SUM(fat_g) as total_fat_g,
                COUNT(*) as entry_count
            FROM resolved_entries
-           WHERE logged_date >= date('now', '-' || ? || ' days')
+           WHERE logged_date >= ? AND logged_date <= ?
            GROUP BY logged_date
            ORDER BY logged_date DESC""",
-        (days,)
+        (start_date, end_date)
     )
-    
+
     rows = cursor.fetchall()
     conn.close()
-    
+
     return [dict(row) for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# Favorites
+# ---------------------------------------------------------------------------
+
+def insert_favorite(name: str, items: List[Dict[str, Any]]) -> int:
+    """Save a new favorite. items is a list of nutrition dicts. Returns new id."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    created_at = datetime.now(UTC).isoformat()
+    cursor.execute(
+        "INSERT INTO favorites (name, items_json, created_at) VALUES (?, ?, ?)",
+        (name, json.dumps(items), created_at),
+    )
+    fav_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return fav_id
+
+
+def get_favorites() -> List[Dict[str, Any]]:
+    """Return all favorites ordered by name, with parsed items list and computed totals."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, items_json, created_at FROM favorites ORDER BY name ASC")
+    rows = cursor.fetchall()
+    conn.close()
+
+    result = []
+    for row in rows:
+        items = json.loads(row["items_json"])
+        total_calories = sum(i.get("calories") or 0 for i in items)
+        total_protein = sum(i.get("protein_g") or 0 for i in items)
+        total_carbs = sum(i.get("carbs_g") or 0 for i in items)
+        total_fat = sum(i.get("fat_g") or 0 for i in items)
+        result.append({
+            "id": row["id"],
+            "name": row["name"],
+            "items": items,
+            "item_count": len(items),
+            "total_calories": total_calories,
+            "total_protein_g": round(total_protein, 1),
+            "total_carbs_g": round(total_carbs, 1),
+            "total_fat_g": round(total_fat, 1),
+            "created_at": row["created_at"],
+        })
+    return result
+
+
+def get_favorite(fav_id: int) -> Optional[Dict[str, Any]]:
+    """Return a single favorite by id, or None if not found."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, items_json, created_at FROM favorites WHERE id = ?", (fav_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    items = json.loads(row["items_json"])
+    return {"id": row["id"], "name": row["name"], "items": items, "created_at": row["created_at"]}
+
+
+def delete_favorite(fav_id: int) -> bool:
+    """Delete a favorite by id. Returns True if deleted."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM favorites WHERE id = ?", (fav_id,))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+
+def log_favorite(fav_id: int) -> List[int]:
+    """
+    Log all items from a favorite as new resolved_entries for today.
+    Returns list of new entry ids.
+    """
+    fav = get_favorite(fav_id)
+    if not fav:
+        return []
+
+    today = date.today().isoformat()
+    new_ids = []
+
+    # We need a parsed_entry stub to satisfy the FK
+    raw_id = insert_raw_entry(f"[favorite] {fav['name']}")
+    parsed_id = insert_parsed_entry(raw_id, {"intents": []})
+
+    for item in fav["items"]:
+        qty = float(item.get("quantity_value") or 1)
+        entry_id = insert_resolved_entry(
+            parsed_id=parsed_id,
+            food_name=item.get("food_name") or item.get("name", ""),
+            calories=item.get("calories"),
+            meal=item.get("meal"),
+            logged_date=today,
+            source="favorite",
+            protein_g=item.get("protein_g"),
+            carbs_g=item.get("carbs_g"),
+            fat_g=item.get("fat_g"),
+            reasoning=item.get("reasoning"),
+            quantity_value=qty,
+            quantity_unit=item.get("quantity_unit"),
+            per_unit_calories=item.get("per_unit_calories") or (item.get("calories") / qty if item.get("calories") and qty else None),
+            per_unit_protein_g=item.get("per_unit_protein_g") or (item.get("protein_g") / qty if item.get("protein_g") and qty else None),
+            per_unit_carbs_g=item.get("per_unit_carbs_g") or (item.get("carbs_g") / qty if item.get("carbs_g") and qty else None),
+            per_unit_fat_g=item.get("per_unit_fat_g") or (item.get("fat_g") / qty if item.get("fat_g") and qty else None),
+        )
+        new_ids.append(entry_id)
+
+    return new_ids
+
+
+def get_weekly_summary(start_date: str) -> Dict[str, Any]:
+    """
+    Return a full 7-day weekly summary starting from start_date (YYYY-MM-DD).
+    Includes per-day stats, weekly totals/averages, and meal frequency.
+    """
+    from datetime import timedelta
+    start = date.fromisoformat(start_date)
+    end = start + timedelta(days=6)
+    end_date = end.isoformat()
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Per-day totals with macros
+    cursor.execute(
+        """SELECT
+               logged_date as date,
+               SUM(calories) as total_calories,
+               SUM(protein_g) as total_protein_g,
+               SUM(carbs_g) as total_carbs_g,
+               SUM(fat_g) as total_fat_g,
+               COUNT(*) as entry_count
+           FROM resolved_entries
+           WHERE logged_date >= ? AND logged_date <= ?
+           GROUP BY logged_date
+           ORDER BY logged_date ASC""",
+        (start_date, end_date),
+    )
+    day_rows = {row["date"]: dict(row) for row in cursor.fetchall()}
+
+    # Meal frequency counts across the week
+    cursor.execute(
+        """SELECT meal, COUNT(*) as count
+           FROM resolved_entries
+           WHERE logged_date >= ? AND logged_date <= ? AND meal IS NOT NULL
+           GROUP BY meal""",
+        (start_date, end_date),
+    )
+    meal_freq = {row["meal"]: row["count"] for row in cursor.fetchall()}
+
+    conn.close()
+
+    # Build ordered day list (fill in missing days with zeros)
+    days_list = []
+    for i in range(7):
+        d = (start + timedelta(days=i)).isoformat()
+        if d in day_rows:
+            days_list.append(day_rows[d])
+        else:
+            days_list.append({
+                "date": d,
+                "total_calories": None,
+                "total_protein_g": None,
+                "total_carbs_g": None,
+                "total_fat_g": None,
+                "entry_count": 0,
+            })
+
+    # Compute totals/averages only over days that have data
+    active_days = [d for d in days_list if d["entry_count"] > 0]
+    n = len(active_days)
+
+    def _sum(field):
+        return round(sum(d[field] or 0 for d in active_days), 1)
+
+    def _avg(field):
+        if n == 0:
+            return None
+        return round(_sum(field) / n, 1)
+
+    total_calories = _sum("total_calories")
+    avg_calories = _avg("total_calories")
+    total_protein = _sum("total_protein_g")
+    avg_protein = _avg("total_protein_g")
+    total_carbs = _sum("total_carbs_g")
+    avg_carbs = _avg("total_carbs_g")
+    total_fat = _sum("total_fat_g")
+    avg_fat = _avg("total_fat_g")
+
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "days": days_list,
+        "active_days": n,
+        "totals": {
+            "calories": total_calories,
+            "protein_g": total_protein,
+            "carbs_g": total_carbs,
+            "fat_g": total_fat,
+        },
+        "averages": {
+            "calories": avg_calories,
+            "protein_g": avg_protein,
+            "carbs_g": avg_carbs,
+            "fat_g": avg_fat,
+        },
+        "meal_frequency": meal_freq,
+    }
 
 
 def delete_resolved_entry(entry_id: int) -> bool:
@@ -282,6 +934,82 @@ def delete_resolved_entry(entry_id: int) -> bool:
     conn.close()
     
     return deleted
+
+
+def add_entry_to_today(entry_id: int) -> Optional[int]:
+    """Clone an existing entry onto today's date/time. Returns new entry id or None if not found."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """SELECT parsed_id, food_name, calories, meal,
+                  protein_g, carbs_g, fat_g, fiber_g, sugar_g,
+                  sodium_mg, potassium_mg, cholesterol_mg,
+                  saturated_fat_g, trans_fat_g,
+                  calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu,
+                  source, assumptions, reasoning, openai_response,
+                  quantity_value, quantity_unit, per_unit_calories, per_unit_protein_g, per_unit_carbs_g, per_unit_fat_g
+           FROM resolved_entries
+           WHERE id = ?""",
+        (entry_id,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return None
+
+    today = date.today().isoformat()
+    created_at = datetime.now(UTC).isoformat()
+    source = dict(row)
+
+    cursor.execute(
+        """INSERT INTO resolved_entries
+           (parsed_id, food_name, calories, meal, logged_date, created_at,
+            protein_g, carbs_g, fat_g, fiber_g, sugar_g,
+            sodium_mg, potassium_mg, cholesterol_mg,
+            saturated_fat_g, trans_fat_g,
+            calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu,
+            source, assumptions, reasoning, openai_response,
+            quantity_value, quantity_unit, per_unit_calories, per_unit_protein_g, per_unit_carbs_g, per_unit_fat_g)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            source["parsed_id"],
+            source["food_name"],
+            source["calories"],
+            source["meal"],
+            today,
+            created_at,
+            source["protein_g"],
+            source["carbs_g"],
+            source["fat_g"],
+            source["fiber_g"],
+            source["sugar_g"],
+            source["sodium_mg"],
+            source["potassium_mg"],
+            source["cholesterol_mg"],
+            source["saturated_fat_g"],
+            source["trans_fat_g"],
+            source["calcium_mg"],
+            source["iron_mg"],
+            source["vitamin_c_mg"],
+            source["vitamin_d_iu"],
+            source["source"],
+            source["assumptions"],
+            source["reasoning"],
+            source["openai_response"],
+            source["quantity_value"],
+            source["quantity_unit"],
+            source["per_unit_calories"],
+            source["per_unit_protein_g"],
+            source["per_unit_carbs_g"],
+            source["per_unit_fat_g"],
+        ),
+    )
+
+    new_entry_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return new_entry_id
 
 
 def get_recent_entries_by_meal(meal: str, date: str, hours_ago: int = 2) -> List[Dict[str, Any]]:
