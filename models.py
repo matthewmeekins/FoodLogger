@@ -86,3 +86,24 @@ class FavoriteCreateRequest(BaseModel):
     """Request to create a new favorite."""
     name: str
     items: List[FavoriteItem]
+
+
+class LoginRequest(BaseModel):
+    """Request payload for login."""
+    username: str
+    password: str
+
+
+class RegisterUserRequest(BaseModel):
+    """Request payload for admin user creation."""
+    username: str
+    password: str
+    display_name: Optional[str] = None
+    is_admin: bool = False
+
+
+class UpdateUserRequest(BaseModel):
+    """Request payload for admin user updates."""
+    display_name: Optional[str] = None
+    password: Optional[str] = None
+    is_active: Optional[bool] = None

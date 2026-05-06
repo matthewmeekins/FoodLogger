@@ -8,22 +8,31 @@ import time
 from datetime import date, timedelta
 from typing import Dict, Any
 from collections import deque
-from fastapi import FastAPI, Request, HTTPException, Body
+from fastapi import FastAPI, Request, HTTPException, Body, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from passlib.hash import bcrypt
 
 import database
 import llm
 import digest
-from models import UpdateEntryRequest, FavoriteCreateRequest
+from models import (
+    UpdateEntryRequest,
+    FavoriteCreateRequest,
+    LoginRequest,
+    RegisterUserRequest,
+    UpdateUserRequest,
+)
 
 
 # Load environment variables
 load_dotenv()
 
 RATE_LIMIT_PER_MINUTE = max(1, int(os.getenv("RATE_LIMIT_PER_MINUTE", "40")))
+AUTH_COOKIE_NAME = "session_id"
+AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true"
 
 _RATE_WINDOW_SECONDS = 60
 _REQUEST_HISTORY: dict[str, deque[float]] = {}
@@ -53,6 +62,64 @@ def _enforce_rate_limit(request: Request) -> None:
     if not _check_rate_limit(client_host):
         raise HTTPException(status_code=429, detail="Rate limit exceeded. Please retry in a minute.")
 
+
+def _get_client_ip(request: Request) -> str:
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _public_user(user: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": user["id"],
+        "username": user["username"],
+        "display_name": user.get("display_name"),
+        "is_admin": bool(user.get("is_admin")),
+        "is_active": bool(user.get("is_active")),
+        "created_at": user.get("created_at"),
+    }
+
+
+def _set_session_cookie(response: Response, session_id: str) -> None:
+    response.set_cookie(
+        key=AUTH_COOKIE_NAME,
+        value=session_id,
+        httponly=True,
+        samesite="lax",
+        secure=AUTH_COOKIE_SECURE,
+        max_age=60 * 60 * 24 * 30,
+        path="/",
+    )
+
+
+def _clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(key=AUTH_COOKIE_NAME, path="/")
+
+
+def _get_current_user_from_request(request: Request) -> Dict[str, Any]:
+    session_id = request.cookies.get(AUTH_COOKIE_NAME)
+    if not session_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    session = database.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+    user = database.get_user_by_id(int(session["user_id"]))
+    if not user or not bool(user.get("is_active")):
+        database.delete_session(session_id)
+        raise HTTPException(status_code=401, detail="User account inactive")
+
+    database.refresh_session(session_id)
+    return user
+
+
+def _require_admin(request: Request) -> Dict[str, Any]:
+    current_user = _get_current_user_from_request(request)
+    if not bool(current_user.get("is_admin")):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
+
 # Initialize FastAPI app
 app = FastAPI(title="Food Logging System")
 
@@ -72,6 +139,116 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 @app.on_event("startup")
 def startup_event():
     database.init_db()
+
+
+@app.post("/auth/login")
+def login(body: LoginRequest, request: Request, response: Response) -> Dict[str, Any]:
+    """Validate credentials, create a session, and set auth cookie."""
+    _enforce_rate_limit(request)
+    database.delete_expired_sessions()
+
+    username = body.username.strip()
+    if not username or not body.password:
+        raise HTTPException(status_code=400, detail="username and password are required")
+
+    user = database.get_user_by_username(username)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    if not bool(user.get("is_active")):
+        raise HTTPException(status_code=403, detail="User account is inactive")
+
+    if not bcrypt.verify(body.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    session_id = database.create_session(
+        int(user["id"]),
+        user_agent=request.headers.get("user-agent"),
+        ip_address=_get_client_ip(request),
+    )
+    _set_session_cookie(response, session_id)
+
+    return {
+        "status": "success",
+        "message": "Logged in",
+        "user": _public_user(user),
+    }
+
+
+@app.post("/auth/logout")
+def logout(request: Request, response: Response) -> Dict[str, Any]:
+    """Delete session and clear auth cookie."""
+    session_id = request.cookies.get(AUTH_COOKIE_NAME)
+    if session_id:
+        database.delete_session(session_id)
+    _clear_session_cookie(response)
+    return {"status": "success", "message": "Logged out"}
+
+
+@app.get("/auth/me")
+def auth_me(request: Request) -> Dict[str, Any]:
+    """Return currently authenticated user."""
+    user = _get_current_user_from_request(request)
+    return {"authenticated": True, "user": _public_user(user)}
+
+
+@app.post("/auth/register")
+def register_user(body: RegisterUserRequest, request: Request) -> Dict[str, Any]:
+    """Create a user account (admin only)."""
+    _require_admin(request)
+
+    username = body.username.strip()
+    if not username or not body.password:
+        raise HTTPException(status_code=400, detail="username and password are required")
+
+    if database.get_user_by_username(username):
+        raise HTTPException(status_code=409, detail="Username already exists")
+
+    password_hash = bcrypt.hash(body.password)
+    try:
+        user_id = database.create_user(
+            username=username,
+            display_name=body.display_name,
+            password_hash=password_hash,
+            is_admin=1 if body.is_admin else 0,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to create user: {exc}")
+
+    user = database.get_user_by_id(user_id)
+    return {
+        "status": "success",
+        "message": "User created",
+        "user": _public_user(user),
+    }
+
+
+@app.put("/auth/users/{user_id}")
+def update_user(user_id: int, body: UpdateUserRequest, request: Request) -> Dict[str, Any]:
+    """Update user profile/account status (admin only)."""
+    _require_admin(request)
+
+    existing = database.get_user_by_id(user_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    password_hash = bcrypt.hash(body.password) if body.password else None
+    updated = database.update_user(
+        user_id,
+        display_name=body.display_name,
+        password_hash=password_hash,
+        is_active=(1 if body.is_active else 0) if body.is_active is not None else None,
+    )
+
+    if not updated:
+        raise HTTPException(status_code=400, detail="No user fields provided for update")
+
+    refreshed = database.get_user_by_id(user_id)
+    return {
+        "status": "success",
+        "message": "User updated",
+        "user": _public_user(refreshed),
+    }
 
 
 @app.post("/log")

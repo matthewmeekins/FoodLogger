@@ -4,11 +4,10 @@ Handles SQLite connection and all database operations.
 """
 
 import sqlite3
-from datetime import datetime, date, timedelta, timezone, UTC
+from datetime import datetime, date, timedelta, UTC
 from typing import Optional, List, Dict, Any
 import json
 
-import secrets
 import uuid
 
 DB_PATH = "food_log.db"
@@ -1214,8 +1213,7 @@ def create_session(
 ) -> str:
     """Create a new session and return its id (UUID)."""
     session_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc)
-    expires_at = (now + timedelta(days=_SESSION_TTL_DAYS)).isoformat()
+    expires_at = (datetime.now(UTC) + timedelta(days=_SESSION_TTL_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
@@ -1243,9 +1241,7 @@ def get_session(session_id: str) -> Optional[Dict[str, Any]]:
 
 def refresh_session(session_id: str) -> None:
     """Roll the session expiry forward by TTL from now."""
-    new_expires = (
-        datetime.now(timezone.utc) + timedelta(days=_SESSION_TTL_DAYS)
-    ).isoformat()
+    new_expires = (datetime.now(UTC) + timedelta(days=_SESSION_TTL_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
