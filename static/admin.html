@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Food Log Admin</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container admin-page-wrap">
+        <div class="header">
+            <div class="header-top-row">
+                <div>
+                    <h1>Admin Console</h1>
+                    <p>Manage user accounts.</p>
+                </div>
+                <div class="auth-controls">
+                    <span id="admin-current-user" class="current-user"></span>
+                    <a class="logout-btn" href="/">Back to App</a>
+                    <button class="logout-btn" onclick="logout()">Log out</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 class="section-title">Create User</h2>
+            <div class="admin-form-grid">
+                <input id="new-username" type="text" placeholder="Username">
+                <input id="new-display-name" type="text" placeholder="Display name">
+                <input id="new-password" type="password" placeholder="Temporary password">
+                <label class="admin-checkbox"><input id="new-is-admin" type="checkbox"> Admin</label>
+            </div>
+            <button class="button" onclick="createUser()">Create User</button>
+            <div id="admin-create-status" class="status-message"></div>
+        </div>
+
+        <div class="card">
+            <h2 class="section-title">Users</h2>
+            <div id="admin-users-status" class="status-message"></div>
+            <div class="admin-table-wrap">
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Username</th>
+                            <th>Display</th>
+                            <th>Admin</th>
+                            <th>Active</th>
+                            <th>Reset Password</th>
+                            <th>Save</th>
+                        </tr>
+                    </thead>
+                    <tbody id="admin-users-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/admin.js"></script>
+</body>
+</html>

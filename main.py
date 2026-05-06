@@ -252,6 +252,12 @@ def register_user(
     }
 
 
+@app.get("/auth/users")
+def get_users(_admin: Dict[str, Any] = Depends(require_admin)) -> Dict[str, Any]:
+    """List all users (admin only)."""
+    return {"users": database.list_users()}
+
+
 @app.put("/auth/users/{user_id}")
 def update_user(
     user_id: int,
@@ -756,6 +762,12 @@ def root():
 def login_page():
     """Serve login UI."""
     return FileResponse("static/login.html")
+
+
+@app.get("/admin")
+def admin_page():
+    """Serve admin UI."""
+    return FileResponse("static/admin.html")
 
 
 @app.get("/health")

@@ -156,6 +156,11 @@
             }
             const display = _currentUser.display_name || _currentUser.username || 'User';
             userEl.textContent = display;
+
+            const adminLink = document.getElementById('admin-link');
+            if (adminLink) {
+                adminLink.classList.toggle('hidden', !_currentUser.is_admin);
+            }
         }
 
         async function requireAuth() {
