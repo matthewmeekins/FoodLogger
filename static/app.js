@@ -1,5 +1,6 @@
 // Get the API base URL (works for both localhost and network access)
         const API_BASE = window.location.origin;
+    let _currentUser = null;
     let _selectedDailyDate = formatIsoDate(new Date());
     let _weeklyStartDate = null;
     const _weeklyDayEntryCache = {};
@@ -147,6 +148,45 @@
         function showStatus(message, type = 'success') {
             setStatus(document.getElementById('log-status'), message, type);
         }
+
+        function renderCurrentUser() {
+            const userEl = document.getElementById('current-user');
+            if (!userEl || !_currentUser) {
+                return;
+            }
+            const display = _currentUser.display_name || _currentUser.username || 'User';
+            userEl.textContent = display;
+        }
+
+        async function requireAuth() {
+            try {
+                const response = await fetch(`${API_BASE}/auth/me`);
+                if (response.status === 401) {
+                    window.location.href = '/login';
+                    return false;
+                }
+                if (!response.ok) {
+                    throw new Error('Unable to verify session');
+                }
+                const data = await response.json();
+                _currentUser = data.user || null;
+                renderCurrentUser();
+                return true;
+            } catch {
+                window.location.href = '/login';
+                return false;
+            }
+        }
+
+        async function logout() {
+            try {
+                await fetch(`${API_BASE}/auth/logout`, { method: 'POST' });
+            } finally {
+                window.location.href = '/login';
+            }
+        }
+
+        window.logout = logout;
 
         function showClarificationCard(pendingEntry) {
             const card = document.getElementById('clarification-card');
@@ -1090,8 +1130,16 @@
             }
         });
 
-        _syncDailyDatePicker();
-        loadFavorites();
+        async function initApp() {
+            const ok = await requireAuth();
+            if (!ok) {
+                return;
+            }
+            _syncDailyDatePicker();
+            loadFavorites();
+        }
+
+        initApp();
 
 let currentEditEntryId = null;
 

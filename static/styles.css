@@ -26,6 +26,40 @@
             margin-bottom: 22px;
         }
 
+        .header-top-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+        }
+
+        .auth-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .current-user {
+            color: #aab5d3;
+            font-size: 0.88rem;
+        }
+
+        .logout-btn {
+            border: 1px solid #3d4865;
+            background: #161c2b;
+            color: #dce4ff;
+            border-radius: 8px;
+            padding: 7px 12px;
+            font-size: 0.82rem;
+            cursor: pointer;
+            transition: border-color 0.16s, color 0.16s;
+        }
+
+        .logout-btn:hover {
+            border-color: #7aa2ff;
+            color: #ffffff;
+        }
+
         .header h1 {
             font-size: 2rem;
             line-height: 1.1;
@@ -1365,9 +1399,75 @@
             margin: 22px 0 10px 0;
         }
 
+        body.login-page {
+            display: grid;
+            place-items: center;
+        }
+
+        .login-shell {
+            width: min(460px, 100%);
+        }
+
+        .login-card {
+            background: #171a22;
+            border: 1px solid #2a3040;
+            border-radius: 14px;
+            padding: 22px;
+            box-shadow: 0 20px 35px #03060c59;
+        }
+
+        .login-title {
+            color: #f7f8fc;
+            font-size: 1.6rem;
+            margin-bottom: 6px;
+        }
+
+        .login-subtitle {
+            color: #97a0b5;
+            margin-bottom: 18px;
+            font-size: 0.94rem;
+        }
+
+        .login-card label {
+            display: block;
+            color: #d9deed;
+            font-size: 0.86rem;
+            margin-bottom: 6px;
+        }
+
+        .login-card input {
+            width: 100%;
+            padding: 11px 12px;
+            border: 1px solid #30374a;
+            background: #10131a;
+            color: #e8ebf3;
+            border-radius: 10px;
+            font-size: 14px;
+            margin-bottom: 12px;
+            font-family: inherit;
+        }
+
+        .login-card input:focus {
+            outline: none;
+            border-color: #5c8dff;
+            box-shadow: 0 0 0 3px #5c8dff26;
+        }
+
+        .login-status {
+            min-height: 18px;
+            font-size: 0.84rem;
+            color: #ff9a9a;
+            margin-top: 8px;
+        }
+
         @media (max-width: 480px) {
             body {
                 padding: 14px;
+            }
+
+            .header-top-row {
+                flex-direction: column;
+                align-items: flex-start;
             }
 
             .header h1 {

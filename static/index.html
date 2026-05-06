@@ -11,8 +11,16 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>Food Journal</h1>
-            <p>Natural logging with confidence-aware nutrition estimates.</p>
+            <div class="header-top-row">
+                <div>
+                    <h1>Food Journal</h1>
+                    <p>Natural logging with confidence-aware nutrition estimates.</p>
+                </div>
+                <div class="auth-controls">
+                    <span id="current-user" class="current-user"></span>
+                    <button id="logout-button" class="logout-btn" onclick="logout()">Log out</button>
+                </div>
+            </div>
         </div>
 
         <div class="tabs">

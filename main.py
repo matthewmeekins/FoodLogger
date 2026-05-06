@@ -723,6 +723,12 @@ def root():
     return FileResponse("static/index.html")
 
 
+@app.get("/login")
+def login_page():
+    """Serve login UI."""
+    return FileResponse("static/login.html")
+
+
 @app.get("/health")
 def health():
     """Health check endpoint."""

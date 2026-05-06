@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Food Log Login</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="login-page">
+    <div class="login-shell">
+        <div class="login-card">
+            <h1 class="login-title">Food Log</h1>
+            <p class="login-subtitle">Sign in to view your entries.</p>
+
+            <form id="login-form">
+                <label for="username">Username</label>
+                <input id="username" name="username" type="text" autocomplete="username" required>
+
+                <label for="password">Password</label>
+                <input id="password" name="password" type="password" autocomplete="current-password" required>
+
+                <button id="login-button" class="button" type="submit">Sign In</button>
+                <div id="login-status" class="login-status"></div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+
+        async function checkExistingSession() {
+            try {
+                const response = await fetch(`${API_BASE}/auth/me`);
+                if (response.ok) {
+                    window.location.href = '/';
+                }
+            } catch {
+                // Stay on login page if check fails.
+            }
+        }
+
+        document.getElementById('login-form').addEventListener('submit', async function (event) {
+            event.preventDefault();
+            const button = document.getElementById('login-button');
+            const status = document.getElementById('login-status');
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+
+            if (!username || !password) {
+                status.textContent = 'Username and password are required.';
+                return;
+            }
+
+            button.disabled = true;
+            button.textContent = 'Signing in...';
+            status.textContent = '';
+
+            try {
+                const response = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password }),
+                });
+
+                if (!response.ok) {
+                    const body = await response.json().catch(() => ({}));
+                    status.textContent = body.detail || 'Invalid username or password.';
+                    return;
+                }
+
+                window.location.href = '/';
+            } catch {
+                status.textContent = 'Unable to connect. Please try again.';
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Sign In';
+            }
+        });
+
+        checkExistingSession();
+    </script>
+</body>
+</html>
