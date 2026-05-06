@@ -39,7 +39,10 @@
                 </div>
                 <div class="admin-field">
                     <label for="new-is-admin">Access</label>
-                    <label class="admin-checkbox"><input id="new-is-admin" type="checkbox"> Admin user</label>
+                    <label class="admin-checkbox">
+                        <input id="new-is-admin" type="checkbox">
+                        <span>Admin User</span>
+                    </label>
                 </div>
             </div>
             <button class="button" onclick="createUser()">Create User</button>
@@ -56,8 +59,8 @@
                             <th>ID</th>
                             <th>Username</th>
                             <th>Display</th>
-                            <th>Admin</th>
-                            <th>Active</th>
+                            <th class="boolean-col">Admin</th>
+                            <th class="boolean-col">Active</th>
                             <th>Reset Password</th>
                             <th>Save</th>
                         </tr>
