@@ -25,10 +25,22 @@
         <div class="card">
             <h2 class="section-title">Create User</h2>
             <div class="admin-form-grid">
-                <input id="new-username" type="text" placeholder="Username">
-                <input id="new-display-name" type="text" placeholder="Display name">
-                <input id="new-password" type="password" placeholder="Temporary password">
-                <label class="admin-checkbox"><input id="new-is-admin" type="checkbox"> Admin</label>
+                <div class="admin-field">
+                    <label for="new-username">Username</label>
+                    <input id="new-username" class="admin-input" type="text" placeholder="Username">
+                </div>
+                <div class="admin-field">
+                    <label for="new-display-name">Display Name</label>
+                    <input id="new-display-name" class="admin-input" type="text" placeholder="Display name">
+                </div>
+                <div class="admin-field">
+                    <label for="new-password">Temporary Password</label>
+                    <input id="new-password" class="admin-input" type="password" placeholder="Temporary password">
+                </div>
+                <div class="admin-field">
+                    <label for="new-is-admin">Access</label>
+                    <label class="admin-checkbox"><input id="new-is-admin" type="checkbox"> Admin user</label>
+                </div>
             </div>
             <button class="button" onclick="createUser()">Create User</button>
             <div id="admin-create-status" class="status-message"></div>

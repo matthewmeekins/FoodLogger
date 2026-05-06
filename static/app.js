@@ -163,6 +163,48 @@
             }
         }
 
+        function closeAccountMenu() {
+            const menu = document.getElementById('account-menu');
+            const toggle = document.getElementById('account-menu-toggle');
+            if (!menu || !toggle) {
+                return;
+            }
+            menu.classList.remove('open');
+            toggle.setAttribute('aria-expanded', 'false');
+        }
+
+        function toggleAccountMenu(event) {
+            event.stopPropagation();
+            const menu = document.getElementById('account-menu');
+            const toggle = document.getElementById('account-menu-toggle');
+            if (!menu || !toggle) {
+                return;
+            }
+            const nextState = !menu.classList.contains('open');
+            menu.classList.toggle('open', nextState);
+            toggle.setAttribute('aria-expanded', String(nextState));
+        }
+
+        function setupAccountMenu() {
+            const menu = document.getElementById('account-menu');
+            const shell = document.querySelector('.auth-shell');
+            if (!menu || !shell) {
+                return;
+            }
+
+            document.addEventListener('click', (event) => {
+                if (!shell.contains(event.target)) {
+                    closeAccountMenu();
+                }
+            });
+
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') {
+                    closeAccountMenu();
+                }
+            });
+        }
+
         async function requireAuth() {
             try {
                 const response = await fetch(`${API_BASE}/auth/me`);
@@ -185,6 +227,7 @@
 
         async function logout() {
             try {
+                closeAccountMenu();
                 await fetch(`${API_BASE}/auth/logout`, { method: 'POST' });
             } finally {
                 window.location.href = '/login';
@@ -194,6 +237,7 @@
         function openPasswordModal() {
             const modal = document.getElementById('password-modal');
             if (!modal) return;
+            closeAccountMenu();
             document.getElementById('current-password').value = '';
             document.getElementById('new-password').value = '';
             setStatus(document.getElementById('password-status'), '');
@@ -245,6 +289,7 @@
         window.openPasswordModal = openPasswordModal;
         window.closePasswordModal = closePasswordModal;
         window.submitPasswordChange = submitPasswordChange;
+        window.toggleAccountMenu = toggleAccountMenu;
 
         function showClarificationCard(pendingEntry) {
             const card = document.getElementById('clarification-card');
@@ -1193,6 +1238,7 @@
             if (!ok) {
                 return;
             }
+            setupAccountMenu();
             _syncDailyDatePicker();
             loadFavorites();
         }

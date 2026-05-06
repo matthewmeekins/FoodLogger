@@ -16,11 +16,26 @@
                     <h1>Food Journal</h1>
                     <p>Natural logging with confidence-aware nutrition estimates.</p>
                 </div>
-                <div class="auth-controls">
-                    <span id="current-user" class="current-user"></span>
-                    <a id="admin-link" class="logout-btn hidden" href="/admin">Admin</a>
-                    <button class="logout-btn" onclick="openPasswordModal()">Change Password</button>
-                    <button id="logout-button" class="logout-btn" onclick="logout()">Log out</button>
+                <div class="auth-shell">
+                    <span id="current-user" class="current-user-pill"></span>
+                    <button
+                        id="account-menu-toggle"
+                        class="menu-toggle"
+                        type="button"
+                        aria-expanded="false"
+                        aria-controls="account-menu"
+                        aria-label="Open account menu"
+                        onclick="toggleAccountMenu(event)"
+                    >
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </button>
+                    <div id="account-menu" class="account-menu" role="menu" aria-label="Account actions">
+                        <a id="admin-link" class="account-menu-item hidden" role="menuitem" href="/admin">Admin Console</a>
+                        <button class="account-menu-item" role="menuitem" type="button" onclick="openPasswordModal()">Change Password</button>
+                        <button id="logout-button" class="account-menu-item danger" role="menuitem" type="button" onclick="logout()">Log out</button>
+                    </div>
                 </div>
             </div>
         </div>

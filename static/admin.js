@@ -53,11 +53,11 @@ function renderUsers() {
         <tr>
             <td>${u.id}</td>
             <td>${u.username}</td>
-            <td><input id="display-${u.id}" type="text" value="${(u.display_name || '').replace(/"/g, '&quot;')}"></td>
+            <td><input class="admin-input" id="display-${u.id}" type="text" value="${(u.display_name || '').replace(/"/g, '&quot;')}"></td>
             <td>${u.is_admin ? 'yes' : 'no'}</td>
             <td><input id="active-${u.id}" type="checkbox" ${u.is_active ? 'checked' : ''}></td>
-            <td><input id="password-${u.id}" type="password" placeholder="new password"></td>
-            <td><button class="logout-btn" onclick="saveUser(${u.id})">Save</button></td>
+            <td><input class="admin-input" id="password-${u.id}" type="password" placeholder="new password"></td>
+            <td><button class="table-save-btn" onclick="saveUser(${u.id})">Save</button></td>
         </tr>
     `).join('');
 }
