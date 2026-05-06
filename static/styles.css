@@ -1266,27 +1266,30 @@
         .nav-date-picker {
             width: 100%;
             height: 44px;
-            max-width: calc(100% - 2px);
+            max-width: 100%;
             min-width: 0;
             margin-top: 0;
             justify-self: center;
-            padding: 0 10px;
+            padding: 0 36px 0 12px;
             overflow: hidden;
             border-radius: 10px;
-            border: 1px solid #39415a;
-            background: #171e30;
-            color: #d5ddf2;
-            text-align: center;
+            border: 1px solid #33405d;
+            background: linear-gradient(180deg, #1a2236 0%, #121a2c 100%);
+            color: #dce6ff;
+            text-align: left;
             font-size: 0.86rem;
             font-weight: 600;
             letter-spacing: 0.01em;
             font-family: inherit;
             cursor: pointer;
+            box-shadow: inset 0 1px 0 #ffffff0a;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='16' height='16' fill='none' stroke='%2394a9d8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2' ry='2'/%3E%3Cline x1='16' y1='2' x2='16' y2='6'/%3E%3Cline x1='8' y1='2' x2='8' y2='6'/%3E%3Cline x1='3' y1='10' x2='21' y2='10'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
         }
 
         .nav-date-picker:hover {
-            border-color: #7e8aa8;
-            background: #1b243a;
+            border-color: #5e739f;
         }
 
         .nav-date-picker:focus {
@@ -1296,8 +1299,73 @@
         }
 
         .nav-date-picker::-webkit-calendar-picker-indicator {
-            filter: invert(0.86) hue-rotate(180deg);
-            cursor: pointer;
+            display: none;
+        }
+
+        .flatpickr-calendar {
+            background: #171a22;
+            border: 1px solid #2a3040;
+            border-radius: 12px;
+            box-shadow: 0 20px 36px #03060cad;
+        }
+
+        .flatpickr-months .flatpickr-month,
+        .flatpickr-current-month .flatpickr-monthDropdown-months,
+        .flatpickr-current-month input.cur-year {
+            color: #e7ecfb;
+            fill: #e7ecfb;
+            font-weight: 600;
+        }
+
+        .flatpickr-weekdays {
+            background: transparent;
+        }
+
+        .flatpickr-weekday {
+            color: #8e9bbb;
+            font-weight: 600;
+        }
+
+        .flatpickr-day {
+            color: #d7deef;
+            border-radius: 8px;
+            border: 1px solid transparent;
+        }
+
+        .flatpickr-day:hover,
+        .flatpickr-day:focus {
+            background: #212a40;
+            border-color: #3b4f77;
+            color: #eef3ff;
+        }
+
+        .flatpickr-day.selected,
+        .flatpickr-day.startRange,
+        .flatpickr-day.endRange {
+            background: linear-gradient(180deg, #5d90ff 0%, #3f77f3 100%);
+            border-color: #5d90ff;
+            color: #ffffff;
+        }
+
+        .flatpickr-day.today {
+            border-color: #5d90ff;
+            color: #bdd2ff;
+        }
+
+        .flatpickr-day.flatpickr-disabled,
+        .flatpickr-day.flatpickr-disabled:hover {
+            color: #56617a;
+            background: transparent;
+        }
+
+        .flatpickr-prev-month,
+        .flatpickr-next-month {
+            fill: #9ab0df;
+        }
+
+        .flatpickr-prev-month:hover,
+        .flatpickr-next-month:hover {
+            fill: #c8d8ff;
         }
 
         .weekly-day-list {
@@ -1823,10 +1891,11 @@
             .nav-date-picker {
                 width: 100%;
                 height: 44px;
-                max-width: calc(100% - 12px);
+                max-width: 100%;
                 min-width: 0;
-                padding: 0 6px;
+                padding: 0 32px 0 10px;
                 font-size: 0.76rem;
+                background-position: right 10px center;
             }
 
             .weekly-totals-grid {

@@ -6,6 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <title>Food Log</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
@@ -88,7 +89,7 @@
                 <h2 class="section-title">Daily Entries</h2>
                 <div class="daily-nav date-nav">
                     <button class="button secondary-btn" onclick="navigateDaily(-1)" aria-label="Previous day" title="Previous day">&#x2039;</button>
-                    <input type="date" id="daily-date-picker" class="nav-date-picker" onchange="onDailyDateChange(this.value)" onclick="openDatePicker('daily-date-picker')" onfocus="openDatePicker('daily-date-picker')" onkeydown="return false" onpaste="return false" />
+                    <input type="text" id="daily-date-picker" class="nav-date-picker" readonly aria-label="Select day" />
                     <button class="button secondary-btn" onclick="navigateDaily(1)" aria-label="Next day" title="Next day">&#x203A;</button>
                 </div>
                 <div class="meal-filter-bar" id="meal-filter-bar">
@@ -121,7 +122,7 @@
                 <h2 class="section-title">Weekly Summary</h2>
                 <div class="weekly-nav date-nav">
                     <button class="button secondary-btn" onclick="navigateWeek(-1)" aria-label="Previous week" title="Previous week">&#x2039;</button>
-                    <input type="date" id="weekly-date-picker" class="nav-date-picker" onchange="onWeeklyDateChange(this.value)" onclick="openDatePicker('weekly-date-picker')" onfocus="openDatePicker('weekly-date-picker')" onkeydown="return false" onpaste="return false" />
+                    <input type="text" id="weekly-date-picker" class="nav-date-picker" readonly aria-label="Select week" />
                     <button class="button secondary-btn" onclick="navigateWeek(1)" aria-label="Next week" title="Next week">&#x203A;</button>
                 </div>
                 <div id="weekly-content">
@@ -200,6 +201,7 @@
             </div>
         </div>
     </div>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="/static/app.js"></script>
 </body>
 </html>
