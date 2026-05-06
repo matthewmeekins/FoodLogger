@@ -107,3 +107,9 @@ class UpdateUserRequest(BaseModel):
     display_name: Optional[str] = None
     password: Optional[str] = None
     is_active: Optional[bool] = None
+
+
+class ChangePasswordRequest(BaseModel):
+    """Request payload for authenticated self-service password changes."""
+    current_password: str
+    new_password: str

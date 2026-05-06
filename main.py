@@ -24,6 +24,7 @@ from models import (
     LoginRequest,
     RegisterUserRequest,
     UpdateUserRequest,
+    ChangePasswordRequest,
 )
 
 
@@ -188,6 +189,34 @@ def logout(request: Request, response: Response) -> Dict[str, Any]:
 def auth_me(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     """Return currently authenticated user."""
     return {"authenticated": True, "user": _public_user(current_user)}
+
+
+@app.post("/auth/change-password")
+def change_password(
+    body: ChangePasswordRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Allow authenticated users to change their own password."""
+    if not body.current_password or not body.new_password:
+        raise HTTPException(status_code=400, detail="Both current and new password are required")
+
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+
+    if not bcrypt.verify(body.current_password, current_user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    if bcrypt.verify(body.new_password, current_user["password_hash"]):
+        raise HTTPException(status_code=400, detail="New password must be different from current password")
+
+    updated = database.update_user(
+        int(current_user["id"]),
+        password_hash=bcrypt.hash(body.new_password),
+    )
+    if not updated:
+        raise HTTPException(status_code=500, detail="Password update failed")
+
+    return {"status": "success", "message": "Password updated"}
 
 
 @app.post("/auth/register")

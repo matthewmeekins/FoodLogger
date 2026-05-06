@@ -186,7 +186,60 @@
             }
         }
 
+        function openPasswordModal() {
+            const modal = document.getElementById('password-modal');
+            if (!modal) return;
+            document.getElementById('current-password').value = '';
+            document.getElementById('new-password').value = '';
+            setStatus(document.getElementById('password-status'), '');
+            modal.classList.add('active');
+        }
+
+        function closePasswordModal() {
+            const modal = document.getElementById('password-modal');
+            if (!modal) return;
+            modal.classList.remove('active');
+        }
+
+        async function submitPasswordChange() {
+            const status = document.getElementById('password-status');
+            const currentPassword = document.getElementById('current-password').value;
+            const newPassword = document.getElementById('new-password').value;
+
+            if (!currentPassword || !newPassword) {
+                setStatus(status, 'Both fields are required', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/auth/change-password`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        current_password: currentPassword,
+                        new_password: newPassword,
+                    }),
+                });
+
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    setStatus(status, data.detail || 'Unable to update password', 'error');
+                    return;
+                }
+
+                setStatus(status, 'Password updated successfully', 'success');
+                setTimeout(() => {
+                    closePasswordModal();
+                }, 700);
+            } catch {
+                setStatus(status, 'Unable to update password', 'error');
+            }
+        }
+
         window.logout = logout;
+        window.openPasswordModal = openPasswordModal;
+        window.closePasswordModal = closePasswordModal;
+        window.submitPasswordChange = submitPasswordChange;
 
         function showClarificationCard(pendingEntry) {
             const card = document.getElementById('clarification-card');
@@ -1208,6 +1261,12 @@ let currentEditEntryId = null;
         document.getElementById('edit-modal').addEventListener('click', function(e) {
             if (e.target === this) {
                 closeEditModal();
+            }
+        });
+
+        document.getElementById('password-modal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closePasswordModal();
             }
         });
 
