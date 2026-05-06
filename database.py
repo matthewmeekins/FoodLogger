@@ -4,10 +4,12 @@ Handles SQLite connection and all database operations.
 """
 
 import sqlite3
-from datetime import datetime, date, timedelta, UTC
+from datetime import datetime, date, timedelta, timezone, UTC
 from typing import Optional, List, Dict, Any
 import json
 
+import secrets
+import uuid
 
 DB_PATH = "food_log.db"
 
@@ -129,6 +131,30 @@ def _backfill_quantity_fields(cursor: sqlite3.Cursor) -> None:
     )
 
 
+def _ensure_user_id_columns(cursor: sqlite3.Cursor) -> None:
+    """Add user_id column to resolved_entries and entry_edits if missing."""
+    cursor.execute("PRAGMA table_info(resolved_entries)")
+    re_cols = {row[1] for row in cursor.fetchall()}
+    if "user_id" not in re_cols:
+        cursor.execute(
+            "ALTER TABLE resolved_entries ADD COLUMN user_id INTEGER REFERENCES users(id)"
+        )
+
+    cursor.execute("PRAGMA table_info(entry_edits)")
+    ee_cols = {row[1] for row in cursor.fetchall()}
+    if "user_id" not in ee_cols:
+        cursor.execute(
+            "ALTER TABLE entry_edits ADD COLUMN user_id INTEGER REFERENCES users(id)"
+        )
+
+    cursor.execute("PRAGMA table_info(favorites)")
+    fav_cols = {row[1] for row in cursor.fetchall()}
+    if "user_id" not in fav_cols:
+        cursor.execute(
+            "ALTER TABLE favorites ADD COLUMN user_id INTEGER REFERENCES users(id)"
+        )
+
+
 def _ensure_indexes(cursor: sqlite3.Cursor) -> None:
     """Create indexes for hot query paths."""
     cursor.execute(
@@ -210,10 +236,40 @@ def init_db() -> None:
         )
     """)
 
+    # users: accounts for multi-user support
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+            username             TEXT NOT NULL UNIQUE,
+            display_name         TEXT,
+            password_hash        TEXT NOT NULL,
+            is_admin             INTEGER NOT NULL DEFAULT 0,
+            is_active            INTEGER NOT NULL DEFAULT 1,
+            created_at           TEXT NOT NULL DEFAULT (datetime('now')),
+            email                TEXT,
+            email_verified       INTEGER DEFAULT 0,
+            reset_token          TEXT,
+            reset_token_expires  TEXT
+        )
+    """)
+
+    # sessions: server-side session store
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            id          TEXT PRIMARY KEY,
+            user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            expires_at  TEXT NOT NULL,
+            user_agent  TEXT,
+            ip_address  TEXT
+        )
+    """)
+
     # Ensure existing databases are upgraded with any missing nutrient columns.
     cursor.execute("PRAGMA journal_mode=WAL")  # allows concurrent reads during writes
     _migrate_parsed_entries_drop_confidence(cursor)
     _ensure_resolved_entry_columns(cursor)
+    _ensure_user_id_columns(cursor)
     _ensure_indexes(cursor)
     _backfill_resolved_entry_created_at(cursor)
     _backfill_quantity_fields(cursor)
@@ -1053,3 +1109,168 @@ def delete_entries_by_meal_and_date(meal: str, date: str) -> int:
     conn.close()
     
     return deleted_count
+
+
+# ---------------------------------------------------------------------------
+# User helpers
+# ---------------------------------------------------------------------------
+
+def create_user(
+    username: str,
+    password_hash: str,
+    display_name: Optional[str] = None,
+    is_admin: int = 0,
+) -> int:
+    """Insert a new user. Returns the new user id."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """INSERT INTO users (username, display_name, password_hash, is_admin)
+           VALUES (?, ?, ?, ?)""",
+        (username, display_name, password_hash, is_admin),
+    )
+    user_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return user_id
+
+
+def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
+    """Return user row by username, or None if not found."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
+    """Return user row by id, or None if not found."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def list_users() -> List[Dict[str, Any]]:
+    """Return all users (admin use)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, username, display_name, is_admin, is_active, created_at FROM users ORDER BY id"
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def update_user(
+    user_id: int,
+    *,
+    display_name: Optional[str] = None,
+    password_hash: Optional[str] = None,
+    is_active: Optional[int] = None,
+) -> bool:
+    """Update user fields. Returns True if a row was updated."""
+    updates: List[str] = []
+    values: List[Any] = []
+    if display_name is not None:
+        updates.append("display_name = ?")
+        values.append(display_name)
+    if password_hash is not None:
+        updates.append("password_hash = ?")
+        values.append(password_hash)
+    if is_active is not None:
+        updates.append("is_active = ?")
+        values.append(is_active)
+    if not updates:
+        return False
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        f"UPDATE users SET {', '.join(updates)} WHERE id = ?",
+        values + [user_id],
+    )
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
+
+
+# ---------------------------------------------------------------------------
+# Session helpers
+# ---------------------------------------------------------------------------
+
+_SESSION_TTL_DAYS = 30
+
+
+def create_session(
+    user_id: int,
+    user_agent: Optional[str] = None,
+    ip_address: Optional[str] = None,
+) -> str:
+    """Create a new session and return its id (UUID)."""
+    session_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    expires_at = (now + timedelta(days=_SESSION_TTL_DAYS)).isoformat()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """INSERT INTO sessions (id, user_id, expires_at, user_agent, ip_address)
+           VALUES (?, ?, ?, ?, ?)""",
+        (session_id, user_id, expires_at, user_agent, ip_address),
+    )
+    conn.commit()
+    conn.close()
+    return session_id
+
+
+def get_session(session_id: str) -> Optional[Dict[str, Any]]:
+    """Return a valid (non-expired) session row, or None."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM sessions WHERE id = ? AND expires_at > datetime('now')",
+        (session_id,),
+    )
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def refresh_session(session_id: str) -> None:
+    """Roll the session expiry forward by TTL from now."""
+    new_expires = (
+        datetime.now(timezone.utc) + timedelta(days=_SESSION_TTL_DAYS)
+    ).isoformat()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE sessions SET expires_at = ? WHERE id = ?",
+        (new_expires, session_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def delete_session(session_id: str) -> None:
+    """Delete a session (logout)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+    conn.commit()
+    conn.close()
+
+
+def delete_expired_sessions() -> int:
+    """Purge all expired sessions. Returns count deleted."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM sessions WHERE expires_at <= datetime('now')")
+    deleted = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
