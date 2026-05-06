@@ -8,7 +8,7 @@ import time
 from datetime import date, timedelta
 from typing import Dict, Any
 from collections import deque
-from fastapi import FastAPI, Request, HTTPException, Body, Response
+from fastapi import FastAPI, Request, HTTPException, Body, Response, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -96,7 +96,7 @@ def _clear_session_cookie(response: Response) -> None:
     response.delete_cookie(key=AUTH_COOKIE_NAME, path="/")
 
 
-def _get_current_user_from_request(request: Request) -> Dict[str, Any]:
+def get_current_user(request: Request) -> Dict[str, Any]:
     session_id = request.cookies.get(AUTH_COOKIE_NAME)
     if not session_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -114,8 +114,7 @@ def _get_current_user_from_request(request: Request) -> Dict[str, Any]:
     return user
 
 
-def _require_admin(request: Request) -> Dict[str, Any]:
-    current_user = _get_current_user_from_request(request)
+def require_admin(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     if not bool(current_user.get("is_admin")):
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user
@@ -186,16 +185,17 @@ def logout(request: Request, response: Response) -> Dict[str, Any]:
 
 
 @app.get("/auth/me")
-def auth_me(request: Request) -> Dict[str, Any]:
+def auth_me(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     """Return currently authenticated user."""
-    user = _get_current_user_from_request(request)
-    return {"authenticated": True, "user": _public_user(user)}
+    return {"authenticated": True, "user": _public_user(current_user)}
 
 
 @app.post("/auth/register")
-def register_user(body: RegisterUserRequest, request: Request) -> Dict[str, Any]:
+def register_user(
+    body: RegisterUserRequest,
+    _admin: Dict[str, Any] = Depends(require_admin),
+) -> Dict[str, Any]:
     """Create a user account (admin only)."""
-    _require_admin(request)
 
     username = body.username.strip()
     if not username or not body.password:
@@ -224,9 +224,12 @@ def register_user(body: RegisterUserRequest, request: Request) -> Dict[str, Any]
 
 
 @app.put("/auth/users/{user_id}")
-def update_user(user_id: int, body: UpdateUserRequest, request: Request) -> Dict[str, Any]:
+def update_user(
+    user_id: int,
+    body: UpdateUserRequest,
+    _admin: Dict[str, Any] = Depends(require_admin),
+) -> Dict[str, Any]:
     """Update user profile/account status (admin only)."""
-    _require_admin(request)
 
     existing = database.get_user_by_id(user_id)
     if not existing:
