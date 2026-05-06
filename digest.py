@@ -86,12 +86,15 @@ def _fmt(value: Optional[float], decimals: int = 0) -> str:
 # Message builders
 # ---------------------------------------------------------------------------
 
-def build_daily_message(date_str: Optional[str] = None) -> str:
+def build_daily_message(date_str: Optional[str] = None, user_id: Optional[int] = None) -> str:
     """Build a Markdown daily digest for the given date (defaults to today)."""
     if date_str is None:
         date_str = date.today().isoformat()
 
-    entries = database.get_entries_for_date(date_str)
+    if user_id is None:
+        raise RuntimeError("user_id is required for digest queries")
+
+    entries = database.get_entries_for_date(date_str, user_id)
 
     # Pretty date
     d = date.fromisoformat(date_str)
@@ -143,12 +146,15 @@ def build_daily_message(date_str: Optional[str] = None) -> str:
     return "\n".join(lines)
 
 
-def build_weekly_message(start_date: Optional[str] = None) -> str:
+def build_weekly_message(start_date: Optional[str] = None, user_id: Optional[int] = None) -> str:
     """Build a Markdown weekly digest for the 7-day window starting at start_date."""
     if start_date is None:
         start_date = (date.today() - timedelta(days=6)).isoformat()
 
-    summary = database.get_weekly_summary(start_date)
+    if user_id is None:
+        raise RuntimeError("user_id is required for digest queries")
+
+    summary = database.get_weekly_summary(start_date, user_id)
     days = summary["days"]
     totals = summary["totals"]
     averages = summary["averages"]

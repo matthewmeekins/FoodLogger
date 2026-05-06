@@ -255,7 +255,10 @@ def update_user(
 
 
 @app.post("/log")
-async def log_food(request: Request) -> Dict[str, Any]:
+async def log_food(
+    request: Request,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """
     Accept plain text food entry, estimate nutrition with OpenAI, and store in database.
     
@@ -316,6 +319,7 @@ async def log_food(request: Request) -> Dict[str, Any]:
             per_unit_fat_g = (float(fat_g) / quantity_value) if fat_g is not None else None
 
             resolved_id = database.insert_resolved_entry(
+                user_id=int(current_user["id"]),
                 parsed_id=parsed_id,
                 food_name=item["name"],
                 calories=calories,
@@ -372,12 +376,12 @@ async def clarify_entry(request: Request) -> Dict[str, Any]:
 
 
 @app.get("/log/today")
-def get_today_entries() -> Dict[str, Any]:
+def get_today_entries(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     """
     Get all resolved entries for today's date.
     """
     today = date.today().isoformat()
-    entries = database.get_entries_for_date(today)
+    entries = database.get_entries_for_date(today, int(current_user["id"]))
     
     total_calories = sum(entry.get("calories") or 0 for entry in entries)
     
@@ -399,21 +403,26 @@ async def manual_estimate(request: Request) -> Dict[str, Any]:
 
 
 @app.get("/log/summary")
-def get_summary(start_date: str | None = None, end_date: str | None = None, days: int = 7) -> Dict[str, Any]:
+def get_summary(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    days: int = 7,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """
     Get total calories by date.
     - If start_date and end_date are provided, use inclusive range.
     - Otherwise fallback to last N days.
     """
     if start_date and end_date:
-        summary = database.get_summary_by_date_range(start_date, end_date)
+        summary = database.get_summary_by_date_range(start_date, end_date, int(current_user["id"]))
         return {
             "start_date": start_date,
             "end_date": end_date,
             "summary": summary,
         }
 
-    summary = database.get_summary_last_n_days(days)
+    summary = database.get_summary_last_n_days(int(current_user["id"]), days)
     return {
         "days": days,
         "summary": summary,
@@ -421,7 +430,10 @@ def get_summary(start_date: str | None = None, end_date: str | None = None, days
 
 
 @app.get("/log/weekly")
-def get_weekly(start_date: str | None = None) -> Dict[str, Any]:
+def get_weekly(
+    start_date: str | None = None,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """
     Get a 7-day weekly summary starting from start_date (YYYY-MM-DD).
     Defaults to the most recent Monday if start_date is not provided.
@@ -432,13 +444,16 @@ def get_weekly(start_date: str | None = None) -> Dict[str, Any]:
         # Most recent Monday (weekday 0 = Monday)
         start_date = (today - timedelta(days=today.weekday())).isoformat()
 
-    return database.get_weekly_summary(start_date)
+    return database.get_weekly_summary(start_date, int(current_user["id"]))
 
 
 @app.get("/log/date/{target_date}")
-def get_entries_for_specific_date(target_date: str) -> Dict[str, Any]:
+def get_entries_for_specific_date(
+    target_date: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """Get all resolved entries for a specific date (YYYY-MM-DD)."""
-    entries = database.get_entries_for_date(target_date)
+    entries = database.get_entries_for_date(target_date, int(current_user["id"]))
     total_calories = sum(entry.get("calories") or 0 for entry in entries)
 
     return {
@@ -450,11 +465,14 @@ def get_entries_for_specific_date(target_date: str) -> Dict[str, Any]:
 
 
 @app.delete("/log/{entry_id}")
-def delete_entry(entry_id: int) -> Dict[str, Any]:
+def delete_entry(
+    entry_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """
     Delete a food entry by ID.
     """
-    deleted = database.delete_resolved_entry(entry_id)
+    deleted = database.delete_resolved_entry(entry_id, int(current_user["id"]))
     
     if not deleted:
         raise HTTPException(status_code=404, detail="Entry not found")
@@ -463,9 +481,12 @@ def delete_entry(entry_id: int) -> Dict[str, Any]:
 
 
 @app.post("/log/{entry_id}/add-to-today")
-def add_entry_to_today(entry_id: int) -> Dict[str, Any]:
+def add_entry_to_today(
+    entry_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """Clone an existing entry into today's log."""
-    new_entry_id = database.add_entry_to_today(entry_id)
+    new_entry_id = database.add_entry_to_today(entry_id, int(current_user["id"]))
     if new_entry_id is None:
         raise HTTPException(status_code=404, detail="Entry not found")
 
@@ -477,13 +498,18 @@ def add_entry_to_today(entry_id: int) -> Dict[str, Any]:
 
 
 @app.put("/log/{entry_id}")
-def update_entry(entry_id: int, update_data: UpdateEntryRequest = Body(...)) -> Dict[str, Any]:
+def update_entry(
+    entry_id: int,
+    update_data: UpdateEntryRequest = Body(...),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """
     Update a food entry with edit history tracking.
     Only provided fields will be updated.
     """
     updated = database.update_resolved_entry(
         entry_id,
+        int(current_user["id"]),
         food_name=update_data.food_name,
         calories=update_data.calories,
         quantity_value=update_data.quantity_value,
@@ -500,7 +526,7 @@ def update_entry(entry_id: int, update_data: UpdateEntryRequest = Body(...)) -> 
         raise HTTPException(status_code=404, detail="Entry not found")
     
     # Get edit history
-    edits = database.get_entry_edits(entry_id)
+    edits = database.get_entry_edits(entry_id, int(current_user["id"]))
     
     return {
         "status": "success",
@@ -511,9 +537,12 @@ def update_entry(entry_id: int, update_data: UpdateEntryRequest = Body(...)) -> 
 
 
 @app.get("/log/{entry_id}/edits")
-def get_entry_edit_history(entry_id: int) -> Dict[str, Any]:
+def get_entry_edit_history(
+    entry_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """Return edit history for an entry."""
-    edits = database.get_entry_edits(entry_id)
+    edits = database.get_entry_edits(entry_id, int(current_user["id"]))
     
     return {
         "entry_id": entry_id,
@@ -523,9 +552,12 @@ def get_entry_edit_history(entry_id: int) -> Dict[str, Any]:
 
 
 @app.get("/log/{entry_id}/details")
-def get_entry_details(entry_id: int) -> Dict[str, Any]:
+def get_entry_details(
+    entry_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """Return plain-language ready details for an entry disclosure panel."""
-    details = database.get_entry_details(entry_id)
+    details = database.get_entry_details(entry_id, int(current_user["id"]))
     if not details:
         raise HTTPException(status_code=404, detail="Entry not found")
 
@@ -587,36 +619,45 @@ def get_entry_details(entry_id: int) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 @app.post("/favorites")
-def create_favorite(body: FavoriteCreateRequest) -> Dict[str, Any]:
+def create_favorite(
+    body: FavoriteCreateRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """Save a new favorite (single item or multi-item meal)."""
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="name is required")
     items = [item.model_dump() for item in body.items]
-    fav_id = database.insert_favorite(name, items)
+    fav_id = database.insert_favorite(name, items, int(current_user["id"]))
     return {"status": "success", "id": fav_id, "name": name, "item_count": len(items)}
 
 
 @app.get("/favorites")
-def list_favorites() -> Dict[str, Any]:
+def list_favorites(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     """List all saved favorites with computed totals."""
-    favorites = database.get_favorites()
+    favorites = database.get_favorites(int(current_user["id"]))
     return {"favorites": favorites}
 
 
 @app.delete("/favorites/{fav_id}")
-def remove_favorite(fav_id: int) -> Dict[str, Any]:
+def remove_favorite(
+    fav_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """Delete a favorite by id."""
-    deleted = database.delete_favorite(fav_id)
+    deleted = database.delete_favorite(fav_id, int(current_user["id"]))
     if not deleted:
         raise HTTPException(status_code=404, detail="Favorite not found")
     return {"status": "success", "message": "Favorite deleted"}
 
 
 @app.post("/favorites/{fav_id}/log")
-def log_favorite(fav_id: int) -> Dict[str, Any]:
+def log_favorite(
+    fav_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """Log all items from a favorite as new entries for today."""
-    new_ids = database.log_favorite(fav_id)
+    new_ids = database.log_favorite(fav_id, int(current_user["id"]))
     if not new_ids:
         raise HTTPException(status_code=404, detail="Favorite not found")
     return {
@@ -628,7 +669,10 @@ def log_favorite(fav_id: int) -> Dict[str, Any]:
 
 
 @app.post("/digest/send-daily")
-async def send_daily_digest(request: Request) -> Dict[str, Any]:
+async def send_daily_digest(
+    request: Request,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """
     Build and send today's calorie and macro summary to Telegram.
     Accepts optional JSON body: {"date": "YYYY-MM-DD"} to send for a specific date.
@@ -642,7 +686,7 @@ async def send_daily_digest(request: Request) -> Dict[str, Any]:
     target_date = body.get("date") if body else None
 
     try:
-        message = digest.build_daily_message(target_date)
+        message = digest.build_daily_message(target_date, int(current_user["id"]))
         digest.send_telegram(message)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
@@ -651,7 +695,10 @@ async def send_daily_digest(request: Request) -> Dict[str, Any]:
 
 
 @app.post("/digest/send-weekly")
-async def send_weekly_digest(request: Request) -> Dict[str, Any]:
+async def send_weekly_digest(
+    request: Request,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """
     Build and send a 7-day summary to Telegram.
     Accepts optional query param: ?start_date=YYYY-MM-DD (defaults to 7 days ago).
@@ -660,7 +707,7 @@ async def send_weekly_digest(request: Request) -> Dict[str, Any]:
     start_date = request.query_params.get("start_date")
 
     try:
-        message = digest.build_weekly_message(start_date)
+        message = digest.build_weekly_message(start_date, int(current_user["id"]))
         digest.send_telegram(message)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))

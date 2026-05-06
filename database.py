@@ -319,6 +319,7 @@ def insert_parsed_entry(raw_id: int, parsed_json: Dict[str, Any]) -> int:
 
 
 def insert_resolved_entry(
+    user_id: int,
     parsed_id: int,
     food_name: str,
     calories: Optional[int],
@@ -364,8 +365,9 @@ def insert_resolved_entry(
             saturated_fat_g, trans_fat_g,
             calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu,
             source, assumptions, reasoning, openai_response,
-            quantity_value, quantity_unit, per_unit_calories, per_unit_protein_g, per_unit_carbs_g, per_unit_fat_g) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            quantity_value, quantity_unit, per_unit_calories, per_unit_protein_g, per_unit_carbs_g, per_unit_fat_g,
+            user_id) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             parsed_id,
             food_name,
@@ -397,6 +399,7 @@ def insert_resolved_entry(
             per_unit_protein_g,
             per_unit_carbs_g,
             per_unit_fat_g,
+            user_id,
         )
     )
     
@@ -407,19 +410,36 @@ def insert_resolved_entry(
     return resolved_id
 
 
-def _log_edit(cursor: sqlite3.Cursor, entry_id: int, field_name: str, old_value: Any, new_value: Any) -> None:
+def _log_edit(
+    cursor: sqlite3.Cursor,
+    entry_id: int,
+    field_name: str,
+    old_value: Any,
+    new_value: Any,
+    user_id: Optional[int] = None,
+) -> None:
     """Log a single field edit to the entry_edits table."""
     edited_at = datetime.now(UTC).isoformat()
+    if user_id is None:
+        cursor.execute(
+            """INSERT INTO entry_edits (entry_id, field_name, old_value, new_value, edited_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (entry_id, field_name, str(old_value) if old_value is not None else None,
+             str(new_value) if new_value is not None else None, edited_at)
+        )
+        return
+
     cursor.execute(
-        """INSERT INTO entry_edits (entry_id, field_name, old_value, new_value, edited_at)
-           VALUES (?, ?, ?, ?, ?)""",
-        (entry_id, field_name, str(old_value) if old_value is not None else None, 
-         str(new_value) if new_value is not None else None, edited_at)
+        """INSERT INTO entry_edits (entry_id, field_name, old_value, new_value, edited_at, user_id)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (entry_id, field_name, str(old_value) if old_value is not None else None,
+         str(new_value) if new_value is not None else None, edited_at, user_id)
     )
 
 
 def update_resolved_entry(
     entry_id: int,
+    user_id: int,
     *,
     food_name: Optional[str] = None,
     calories: Optional[int] = None,
@@ -442,10 +462,10 @@ def update_resolved_entry(
     # Get current values for audit trail
     cursor.execute(
         """SELECT food_name, calories, quantity_value, quantity_unit, meal, logged_date,
-                  protein_g, carbs_g, fat_g, reasoning,
+                        protein_g, carbs_g, fat_g, reasoning,
                   per_unit_calories, per_unit_protein_g, per_unit_carbs_g, per_unit_fat_g
-           FROM resolved_entries WHERE id = ?""",
-        (entry_id,)
+              FROM resolved_entries WHERE id = ? AND user_id = ?""",
+          (entry_id, user_id)
     )
     row = cursor.fetchone()
     
@@ -461,12 +481,12 @@ def update_resolved_entry(
     if food_name is not None and food_name != current["food_name"]:
         updates.append("food_name = ?")
         values.append(food_name)
-        _log_edit(cursor, entry_id, "food_name", current["food_name"], food_name)
+        _log_edit(cursor, entry_id, "food_name", current["food_name"], food_name, user_id)
     
     if calories is not None and calories != current["calories"]:
         updates.append("calories = ?")
         values.append(calories)
-        _log_edit(cursor, entry_id, "calories", current["calories"], calories)
+        _log_edit(cursor, entry_id, "calories", current["calories"], calories, user_id)
         current_quantity = float(current.get("quantity_value") or 1.0)
         if current_quantity <= 0:
             current_quantity = 1.0
@@ -480,7 +500,7 @@ def update_resolved_entry(
         if new_quantity != float(current.get("quantity_value") or 1.0):
             updates.append("quantity_value = ?")
             values.append(new_quantity)
-            _log_edit(cursor, entry_id, "quantity_value", current.get("quantity_value"), new_quantity)
+            _log_edit(cursor, entry_id, "quantity_value", current.get("quantity_value"), new_quantity, user_id)
 
             per_unit_calories = current.get("per_unit_calories")
             per_unit_protein_g = current.get("per_unit_protein_g")
@@ -524,48 +544,48 @@ def update_resolved_entry(
                 if recalculated_calories != current.get("calories"):
                     updates.append("calories = ?")
                     values.append(recalculated_calories)
-                    _log_edit(cursor, entry_id, "calories", current.get("calories"), recalculated_calories)
+                    _log_edit(cursor, entry_id, "calories", current.get("calories"), recalculated_calories, user_id)
 
             if per_unit_protein_g is not None:
                 recalculated_protein = float(per_unit_protein_g) * new_quantity
                 if recalculated_protein != current.get("protein_g"):
                     updates.append("protein_g = ?")
                     values.append(recalculated_protein)
-                    _log_edit(cursor, entry_id, "protein_g", current.get("protein_g"), recalculated_protein)
+                    _log_edit(cursor, entry_id, "protein_g", current.get("protein_g"), recalculated_protein, user_id)
 
             if per_unit_carbs_g is not None:
                 recalculated_carbs = float(per_unit_carbs_g) * new_quantity
                 if recalculated_carbs != current.get("carbs_g"):
                     updates.append("carbs_g = ?")
                     values.append(recalculated_carbs)
-                    _log_edit(cursor, entry_id, "carbs_g", current.get("carbs_g"), recalculated_carbs)
+                    _log_edit(cursor, entry_id, "carbs_g", current.get("carbs_g"), recalculated_carbs, user_id)
 
             if per_unit_fat_g is not None:
                 recalculated_fat = float(per_unit_fat_g) * new_quantity
                 if recalculated_fat != current.get("fat_g"):
                     updates.append("fat_g = ?")
                     values.append(recalculated_fat)
-                    _log_edit(cursor, entry_id, "fat_g", current.get("fat_g"), recalculated_fat)
+                    _log_edit(cursor, entry_id, "fat_g", current.get("fat_g"), recalculated_fat, user_id)
 
     if quantity_unit is not None and quantity_unit != current.get("quantity_unit"):
         updates.append("quantity_unit = ?")
         values.append(quantity_unit)
-        _log_edit(cursor, entry_id, "quantity_unit", current.get("quantity_unit"), quantity_unit)
+        _log_edit(cursor, entry_id, "quantity_unit", current.get("quantity_unit"), quantity_unit, user_id)
     
     if meal is not None and meal != current["meal"]:
         updates.append("meal = ?")
         values.append(meal)
-        _log_edit(cursor, entry_id, "meal", current["meal"], meal)
+        _log_edit(cursor, entry_id, "meal", current["meal"], meal, user_id)
     
     if logged_date is not None and logged_date != current["logged_date"]:
         updates.append("logged_date = ?")
         values.append(logged_date)
-        _log_edit(cursor, entry_id, "logged_date", current["logged_date"], logged_date)
+        _log_edit(cursor, entry_id, "logged_date", current["logged_date"], logged_date, user_id)
     
     if protein_g is not None and protein_g != current["protein_g"]:
         updates.append("protein_g = ?")
         values.append(protein_g)
-        _log_edit(cursor, entry_id, "protein_g", current["protein_g"], protein_g)
+        _log_edit(cursor, entry_id, "protein_g", current["protein_g"], protein_g, user_id)
         current_quantity = float(current.get("quantity_value") or 1.0)
         if current_quantity <= 0:
             current_quantity = 1.0
@@ -575,7 +595,7 @@ def update_resolved_entry(
     if carbs_g is not None and carbs_g != current["carbs_g"]:
         updates.append("carbs_g = ?")
         values.append(carbs_g)
-        _log_edit(cursor, entry_id, "carbs_g", current["carbs_g"], carbs_g)
+        _log_edit(cursor, entry_id, "carbs_g", current["carbs_g"], carbs_g, user_id)
         current_quantity = float(current.get("quantity_value") or 1.0)
         if current_quantity <= 0:
             current_quantity = 1.0
@@ -585,7 +605,7 @@ def update_resolved_entry(
     if fat_g is not None and fat_g != current["fat_g"]:
         updates.append("fat_g = ?")
         values.append(fat_g)
-        _log_edit(cursor, entry_id, "fat_g", current["fat_g"], fat_g)
+        _log_edit(cursor, entry_id, "fat_g", current["fat_g"], fat_g, user_id)
         current_quantity = float(current.get("quantity_value") or 1.0)
         if current_quantity <= 0:
             current_quantity = 1.0
@@ -595,16 +615,16 @@ def update_resolved_entry(
     if reasoning is not None and reasoning != current["reasoning"]:
         updates.append("reasoning = ?")
         values.append(reasoning)
-        _log_edit(cursor, entry_id, "reasoning", current["reasoning"], reasoning)
+        _log_edit(cursor, entry_id, "reasoning", current["reasoning"], reasoning, user_id)
     
     # Only update if there are changes
     if not updates:
         conn.close()
         return True
     
-    values.append(entry_id)
+    values.extend([entry_id, user_id])
     cursor.execute(
-        f"UPDATE resolved_entries SET {', '.join(updates)} WHERE id = ?",
+        f"UPDATE resolved_entries SET {', '.join(updates)} WHERE id = ? AND user_id = ?",
         values
     )
     
@@ -614,7 +634,7 @@ def update_resolved_entry(
     return True
 
 
-def get_entry_edits(entry_id: int) -> List[Dict[str, Any]]:
+def get_entry_edits(entry_id: int, user_id: int) -> List[Dict[str, Any]]:
     """Get edit history for an entry."""
     conn = get_connection()
     cursor = conn.cursor()
@@ -622,9 +642,9 @@ def get_entry_edits(entry_id: int) -> List[Dict[str, Any]]:
     cursor.execute(
         """SELECT id, field_name, old_value, new_value, edited_at
            FROM entry_edits
-           WHERE entry_id = ?
+              WHERE entry_id = ? AND user_id = ?
            ORDER BY edited_at DESC""",
-        (entry_id,)
+          (entry_id, user_id)
     )
     
     rows = cursor.fetchall()
@@ -633,7 +653,7 @@ def get_entry_edits(entry_id: int) -> List[Dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
-def get_entry_details(entry_id: int) -> Optional[Dict[str, Any]]:
+def get_entry_details(entry_id: int, user_id: int) -> Optional[Dict[str, Any]]:
     """Get full entry details with source journal input for user-facing plain-language disclosure."""
     conn = get_connection()
     cursor = conn.cursor()
@@ -652,8 +672,8 @@ def get_entry_details(entry_id: int) -> Optional[Dict[str, Any]]:
            FROM resolved_entries r
            LEFT JOIN parsed_entries p ON p.id = r.parsed_id
            LEFT JOIN raw_entries rw ON rw.id = p.raw_id
-           WHERE r.id = ?""",
-        (entry_id,),
+              WHERE r.id = ? AND r.user_id = ?""",
+          (entry_id, user_id),
     )
     row = cursor.fetchone()
     conn.close()
@@ -675,7 +695,7 @@ def get_entry_details(entry_id: int) -> Optional[Dict[str, Any]]:
     return details
 
 
-def get_entries_for_date(date: str) -> List[Dict[str, Any]]:
+def get_entries_for_date(date: str, user_id: int) -> List[Dict[str, Any]]:
     """
     Get all resolved entries for a specific date (YYYY-MM-DD).
     """
@@ -691,9 +711,9 @@ def get_entries_for_date(date: str) -> List[Dict[str, Any]]:
                   calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu,
                   source, assumptions
            FROM resolved_entries 
-           WHERE logged_date = ?
+              WHERE logged_date = ? AND user_id = ?
            ORDER BY id DESC""",
-        (date,)
+          (date, user_id)
     )
     
     rows = cursor.fetchall()
@@ -716,7 +736,7 @@ def get_entries_for_date(date: str) -> List[Dict[str, Any]]:
     return entries
 
 
-def get_summary_last_n_days(days: int = 7) -> List[Dict[str, Any]]:
+def get_summary_last_n_days(user_id: int, days: int = 7) -> List[Dict[str, Any]]:
     """
     Get total calories and macros grouped by date for the last N days.
     Returns list of {date, total_calories, total_protein_g, total_carbs_g, total_fat_g, entry_count}.
@@ -726,10 +746,10 @@ def get_summary_last_n_days(days: int = 7) -> List[Dict[str, Any]]:
     start = (today - timedelta(days=days - 1)).isoformat()
     end = today.isoformat()
 
-    return get_summary_by_date_range(start, end)
+    return get_summary_by_date_range(start, end, user_id)
 
 
-def get_summary_by_date_range(start_date: str, end_date: str) -> List[Dict[str, Any]]:
+def get_summary_by_date_range(start_date: str, end_date: str, user_id: int) -> List[Dict[str, Any]]:
     """
     Get total calories and macros grouped by date for an inclusive date range.
     Returns list of {date, total_calories, total_protein_g, total_carbs_g, total_fat_g, entry_count}.
@@ -746,10 +766,10 @@ def get_summary_by_date_range(start_date: str, end_date: str) -> List[Dict[str, 
                SUM(fat_g) as total_fat_g,
                COUNT(*) as entry_count
            FROM resolved_entries
-           WHERE logged_date >= ? AND logged_date <= ?
+              WHERE logged_date >= ? AND logged_date <= ? AND user_id = ?
            GROUP BY logged_date
            ORDER BY logged_date DESC""",
-        (start_date, end_date)
+          (start_date, end_date, user_id)
     )
 
     rows = cursor.fetchall()
@@ -762,14 +782,14 @@ def get_summary_by_date_range(start_date: str, end_date: str) -> List[Dict[str, 
 # Favorites
 # ---------------------------------------------------------------------------
 
-def insert_favorite(name: str, items: List[Dict[str, Any]]) -> int:
+def insert_favorite(name: str, items: List[Dict[str, Any]], user_id: int) -> int:
     """Save a new favorite. items is a list of nutrition dicts. Returns new id."""
     conn = get_connection()
     cursor = conn.cursor()
     created_at = datetime.now(UTC).isoformat()
     cursor.execute(
-        "INSERT INTO favorites (name, items_json, created_at) VALUES (?, ?, ?)",
-        (name, json.dumps(items), created_at),
+        "INSERT INTO favorites (name, items_json, created_at, user_id) VALUES (?, ?, ?, ?)",
+        (name, json.dumps(items), created_at, user_id),
     )
     fav_id = cursor.lastrowid
     conn.commit()
@@ -777,11 +797,14 @@ def insert_favorite(name: str, items: List[Dict[str, Any]]) -> int:
     return fav_id
 
 
-def get_favorites() -> List[Dict[str, Any]]:
+def get_favorites(user_id: int) -> List[Dict[str, Any]]:
     """Return all favorites ordered by name, with parsed items list and computed totals."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name, items_json, created_at FROM favorites ORDER BY name ASC")
+    cursor.execute(
+        "SELECT id, name, items_json, created_at FROM favorites WHERE user_id = ? ORDER BY name ASC",
+        (user_id,),
+    )
     rows = cursor.fetchall()
     conn.close()
 
@@ -806,11 +829,14 @@ def get_favorites() -> List[Dict[str, Any]]:
     return result
 
 
-def get_favorite(fav_id: int) -> Optional[Dict[str, Any]]:
+def get_favorite(fav_id: int, user_id: int) -> Optional[Dict[str, Any]]:
     """Return a single favorite by id, or None if not found."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name, items_json, created_at FROM favorites WHERE id = ?", (fav_id,))
+    cursor.execute(
+        "SELECT id, name, items_json, created_at FROM favorites WHERE id = ? AND user_id = ?",
+        (fav_id, user_id),
+    )
     row = cursor.fetchone()
     conn.close()
     if not row:
@@ -819,23 +845,23 @@ def get_favorite(fav_id: int) -> Optional[Dict[str, Any]]:
     return {"id": row["id"], "name": row["name"], "items": items, "created_at": row["created_at"]}
 
 
-def delete_favorite(fav_id: int) -> bool:
+def delete_favorite(fav_id: int, user_id: int) -> bool:
     """Delete a favorite by id. Returns True if deleted."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM favorites WHERE id = ?", (fav_id,))
+    cursor.execute("DELETE FROM favorites WHERE id = ? AND user_id = ?", (fav_id, user_id))
     deleted = cursor.rowcount > 0
     conn.commit()
     conn.close()
     return deleted
 
 
-def log_favorite(fav_id: int) -> List[int]:
+def log_favorite(fav_id: int, user_id: int) -> List[int]:
     """
     Log all items from a favorite as new resolved_entries for today.
     Returns list of new entry ids.
     """
-    fav = get_favorite(fav_id)
+    fav = get_favorite(fav_id, user_id)
     if not fav:
         return []
 
@@ -849,6 +875,7 @@ def log_favorite(fav_id: int) -> List[int]:
     for item in fav["items"]:
         qty = float(item.get("quantity_value") or 1)
         entry_id = insert_resolved_entry(
+            user_id=user_id,
             parsed_id=parsed_id,
             food_name=item.get("food_name") or item.get("name", ""),
             calories=item.get("calories"),
@@ -871,7 +898,7 @@ def log_favorite(fav_id: int) -> List[int]:
     return new_ids
 
 
-def get_weekly_summary(start_date: str) -> Dict[str, Any]:
+def get_weekly_summary(start_date: str, user_id: int) -> Dict[str, Any]:
     """
     Return a full 7-day weekly summary starting from start_date (YYYY-MM-DD).
     Includes per-day stats, weekly totals/averages, and meal frequency.
@@ -894,10 +921,10 @@ def get_weekly_summary(start_date: str) -> Dict[str, Any]:
                SUM(fat_g) as total_fat_g,
                COUNT(*) as entry_count
            FROM resolved_entries
-           WHERE logged_date >= ? AND logged_date <= ?
+              WHERE logged_date >= ? AND logged_date <= ? AND user_id = ?
            GROUP BY logged_date
            ORDER BY logged_date ASC""",
-        (start_date, end_date),
+          (start_date, end_date, user_id),
     )
     day_rows = {row["date"]: dict(row) for row in cursor.fetchall()}
 
@@ -905,9 +932,9 @@ def get_weekly_summary(start_date: str) -> Dict[str, Any]:
     cursor.execute(
         """SELECT meal, COUNT(*) as count
            FROM resolved_entries
-           WHERE logged_date >= ? AND logged_date <= ? AND meal IS NOT NULL
+              WHERE logged_date >= ? AND logged_date <= ? AND meal IS NOT NULL AND user_id = ?
            GROUP BY meal""",
-        (start_date, end_date),
+          (start_date, end_date, user_id),
     )
     meal_freq = {row["meal"]: row["count"] for row in cursor.fetchall()}
 
@@ -971,7 +998,7 @@ def get_weekly_summary(start_date: str) -> Dict[str, Any]:
     }
 
 
-def delete_resolved_entry(entry_id: int) -> bool:
+def delete_resolved_entry(entry_id: int, user_id: int) -> bool:
     """
     Delete a resolved entry by ID.
     Returns True if deleted, False if not found.
@@ -980,8 +1007,8 @@ def delete_resolved_entry(entry_id: int) -> bool:
     cursor = conn.cursor()
     
     cursor.execute(
-        "DELETE FROM resolved_entries WHERE id = ?",
-        (entry_id,)
+        "DELETE FROM resolved_entries WHERE id = ? AND user_id = ?",
+        (entry_id, user_id)
     )
     
     deleted = cursor.rowcount > 0
@@ -991,7 +1018,7 @@ def delete_resolved_entry(entry_id: int) -> bool:
     return deleted
 
 
-def add_entry_to_today(entry_id: int) -> Optional[int]:
+def add_entry_to_today(entry_id: int, user_id: int) -> Optional[int]:
     """Clone an existing entry onto today's date/time. Returns new entry id or None if not found."""
     conn = get_connection()
     cursor = conn.cursor()
@@ -1003,10 +1030,11 @@ def add_entry_to_today(entry_id: int) -> Optional[int]:
                   saturated_fat_g, trans_fat_g,
                   calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu,
                   source, assumptions, reasoning, openai_response,
-                  quantity_value, quantity_unit, per_unit_calories, per_unit_protein_g, per_unit_carbs_g, per_unit_fat_g
+                        quantity_value, quantity_unit, per_unit_calories, per_unit_protein_g, per_unit_carbs_g, per_unit_fat_g,
+                        user_id
            FROM resolved_entries
-           WHERE id = ?""",
-        (entry_id,),
+              WHERE id = ? AND user_id = ?""",
+          (entry_id, user_id),
     )
     row = cursor.fetchone()
     if not row:
@@ -1025,8 +1053,9 @@ def add_entry_to_today(entry_id: int) -> Optional[int]:
             saturated_fat_g, trans_fat_g,
             calcium_mg, iron_mg, vitamin_c_mg, vitamin_d_iu,
             source, assumptions, reasoning, openai_response,
-            quantity_value, quantity_unit, per_unit_calories, per_unit_protein_g, per_unit_carbs_g, per_unit_fat_g)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            quantity_value, quantity_unit, per_unit_calories, per_unit_protein_g, per_unit_carbs_g, per_unit_fat_g,
+            user_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             source["parsed_id"],
             source["food_name"],
@@ -1058,6 +1087,7 @@ def add_entry_to_today(entry_id: int) -> Optional[int]:
             source["per_unit_protein_g"],
             source["per_unit_carbs_g"],
             source["per_unit_fat_g"],
+            source["user_id"],
         ),
     )
 

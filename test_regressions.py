@@ -5,6 +5,7 @@ from datetime import date, datetime
 from unittest.mock import patch, MagicMock
 
 from fastapi.testclient import TestClient
+from passlib.hash import bcrypt
 
 import database
 import main
@@ -17,6 +18,23 @@ class FoodLogRegressionTests(unittest.TestCase):
         database.DB_PATH = os.path.join(self._tmpdir.name, "test_food_log.db")
         database.init_db()
         main._REQUEST_HISTORY.clear()
+        self.test_username = "regression-user"
+        self.test_password = "regression-pass"
+        self.user_id = database.create_user(
+            username=self.test_username,
+            display_name="Regression User",
+            password_hash=bcrypt.hash(self.test_password),
+            is_admin=1,
+        )
+
+    def _authed_client(self) -> TestClient:
+        client = TestClient(main.app)
+        login = client.post(
+            "/auth/login",
+            json={"username": self.test_username, "password": self.test_password},
+        )
+        self.assertEqual(login.status_code, 200)
+        return client
 
     def tearDown(self) -> None:
         database.DB_PATH = self._orig_db_path
@@ -28,6 +46,7 @@ class FoodLogRegressionTests(unittest.TestCase):
         raw_1 = database.insert_raw_entry("first")
         parsed_1 = database.insert_parsed_entry(raw_1, {"intents": []})
         database.insert_resolved_entry(
+            user_id=self.user_id,
             parsed_id=parsed_1,
             food_name="FIRST",
             calories=100,
@@ -39,6 +58,7 @@ class FoodLogRegressionTests(unittest.TestCase):
         raw_2 = database.insert_raw_entry("second")
         parsed_2 = database.insert_parsed_entry(raw_2, {"intents": []})
         database.insert_resolved_entry(
+            user_id=self.user_id,
             parsed_id=parsed_2,
             food_name="SECOND",
             calories=200,
@@ -47,7 +67,7 @@ class FoodLogRegressionTests(unittest.TestCase):
             source="manual",
         )
 
-        client = TestClient(main.app)
+        client = self._authed_client()
         response = client.get("/log/today")
         self.assertEqual(response.status_code, 200)
 
@@ -61,6 +81,7 @@ class FoodLogRegressionTests(unittest.TestCase):
         raw_id = database.insert_raw_entry("two kombuchas")
         parsed_id = database.insert_parsed_entry(raw_id, {"intents": []})
         entry_id = database.insert_resolved_entry(
+            user_id=self.user_id,
             parsed_id=parsed_id,
             food_name="Humm Mango Passionfruit Kombucha",
             calories=160,
@@ -78,16 +99,16 @@ class FoodLogRegressionTests(unittest.TestCase):
             source="manual",
         )
 
-        updated = database.update_resolved_entry(entry_id, quantity_value=1)
+        updated = database.update_resolved_entry(entry_id, self.user_id, quantity_value=1)
         self.assertTrue(updated)
 
-        entries = database.get_entries_for_date(today)
+        entries = database.get_entries_for_date(today, self.user_id)
         entry = next(e for e in entries if e["id"] == entry_id)
         self.assertEqual(entry["quantity_value"], 1)
         self.assertEqual(entry["calories"], 80)
         self.assertEqual(entry["carbs_g"], 18)
 
-        edits = database.get_entry_edits(entry_id)
+        edits = database.get_entry_edits(entry_id, self.user_id)
         edited_fields = {edit["field_name"] for edit in edits}
         self.assertIn("quantity_value", edited_fields)
         self.assertIn("calories", edited_fields)
@@ -98,6 +119,7 @@ class FoodLogRegressionTests(unittest.TestCase):
         raw_id = database.insert_raw_entry("historical banana")
         parsed_id = database.insert_parsed_entry(raw_id, {"intents": []})
         original_entry_id = database.insert_resolved_entry(
+            user_id=self.user_id,
             parsed_id=parsed_id,
             food_name="BANANA",
             calories=105,
@@ -107,7 +129,7 @@ class FoodLogRegressionTests(unittest.TestCase):
             quantity_value=1,
         )
 
-        client = TestClient(main.app)
+        client = self._authed_client()
         response = client.post(f"/log/{original_entry_id}/add-to-today")
         self.assertEqual(response.status_code, 200)
 
@@ -116,7 +138,7 @@ class FoodLogRegressionTests(unittest.TestCase):
         self.assertIn("entry_id", payload)
 
         today = date.today().isoformat()
-        today_entries = database.get_entries_for_date(today)
+        today_entries = database.get_entries_for_date(today, self.user_id)
         self.assertTrue(any(e["food_name"] == "BANANA" and e["calories"] == 105 for e in today_entries))
 
     def test_entry_details_endpoint_returns_plain_language_lines(self) -> None:
@@ -125,6 +147,7 @@ class FoodLogRegressionTests(unittest.TestCase):
         raw_id = database.insert_raw_entry("I had 2 humm kombuchas")
         parsed_id = database.insert_parsed_entry(raw_id, {"intents": []})
         entry_id = database.insert_resolved_entry(
+            user_id=self.user_id,
             parsed_id=parsed_id,
             food_name="Humm Mango Passionfruit Kombucha",
             calories=160,
@@ -139,7 +162,7 @@ class FoodLogRegressionTests(unittest.TestCase):
             reasoning="Two bottles at roughly 80 calories each.",
         )
 
-        client = TestClient(main.app)
+        client = self._authed_client()
         response = client.get(f"/log/{entry_id}/details")
         self.assertEqual(response.status_code, 200)
 
@@ -188,7 +211,7 @@ class FoodLogRegressionTests(unittest.TestCase):
 
     def test_weekly_endpoint_returns_7_days(self) -> None:
         """GET /log/weekly returns exactly 7 day slots with correct structure."""
-        client = TestClient(main.app)
+        client = self._authed_client()
         response = client.get("/log/weekly?start_date=2026-04-28")
         self.assertEqual(response.status_code, 200)
 
@@ -204,6 +227,7 @@ class FoodLogRegressionTests(unittest.TestCase):
         """Weekly totals and averages are correctly computed from logged entries."""
         # Insert entries on two different days within a week
         database.insert_resolved_entry(
+            user_id=self.user_id,
             parsed_id=database.insert_parsed_entry(
                 database.insert_raw_entry("breakfast"),
                 {"intents": []}
@@ -218,6 +242,7 @@ class FoodLogRegressionTests(unittest.TestCase):
             source="manual",
         )
         database.insert_resolved_entry(
+            user_id=self.user_id,
             parsed_id=database.insert_parsed_entry(
                 database.insert_raw_entry("lunch"),
                 {"intents": []}
@@ -232,7 +257,7 @@ class FoodLogRegressionTests(unittest.TestCase):
             source="manual",
         )
 
-        client = TestClient(main.app)
+        client = self._authed_client()
         response = client.get("/log/weekly?start_date=2026-04-28")
         self.assertEqual(response.status_code, 200)
 
@@ -247,6 +272,7 @@ class FoodLogRegressionTests(unittest.TestCase):
         """GET /log/summary rows include total_protein_g, total_carbs_g, total_fat_g."""
         today = date.today().isoformat()
         database.insert_resolved_entry(
+            user_id=self.user_id,
             parsed_id=database.insert_parsed_entry(
                 database.insert_raw_entry("test"),
                 {"intents": []}
@@ -261,7 +287,7 @@ class FoodLogRegressionTests(unittest.TestCase):
             source="manual",
         )
 
-        client = TestClient(main.app)
+        client = self._authed_client()
         response = client.get("/log/summary")
         self.assertEqual(response.status_code, 200)
 
@@ -274,7 +300,7 @@ class FoodLogRegressionTests(unittest.TestCase):
 
     def test_favorites_create_list_delete(self) -> None:
         """Can create, list, and delete a single-item favorite."""
-        client = TestClient(main.app)
+        client = self._authed_client()
 
         # Create
         payload = {
@@ -301,7 +327,7 @@ class FoodLogRegressionTests(unittest.TestCase):
 
     def test_log_favorite_creates_today_entries(self) -> None:
         """POST /favorites/{id}/log creates resolved entries for today."""
-        client = TestClient(main.app)
+        client = self._authed_client()
 
         payload = {
             "name": "Standard Breakfast",
@@ -319,14 +345,14 @@ class FoodLogRegressionTests(unittest.TestCase):
         self.assertEqual(data["items_logged"], 2)
 
         today = date.today().isoformat()
-        entries = database.get_entries_for_date(today)
+        entries = database.get_entries_for_date(today, self.user_id)
         logged_names = {e["food_name"] for e in entries}
         self.assertIn("Banana", logged_names)
         self.assertIn("Coffee", logged_names)
 
     def test_favorites_multi_item_totals(self) -> None:
         """Favorites list computes total_calories from all items."""
-        client = TestClient(main.app)
+        client = self._authed_client()
 
         payload = {
             "name": "Big Meal",
