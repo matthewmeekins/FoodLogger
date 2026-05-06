@@ -870,7 +870,8 @@
         }
 
         async function adjustQuantity(entryId, delta, currentQuantity) {
-            const nextQuantity = Math.max(1, Math.round((Number(currentQuantity) + delta) * 100) / 100);
+            const oldQuantity = Math.max(1, Number(currentQuantity));
+            const nextQuantity = Math.max(1, Math.round((oldQuantity + delta) * 100) / 100);
             try {
                 const response = await fetch(`${API_BASE}/log/${entryId}`, {
                     method: 'PUT',
@@ -882,29 +883,19 @@
                     throw new Error('Failed to update quantity');
                 }
 
-                // Update caches in-place — no full page reload
-                if (_entryMap[entryId]) {
-                    _entryMap[entryId].quantity_value = nextQuantity;
-                }
-                const todayIdx = _todayEntries.findIndex(e => e.id === entryId);
-                if (todayIdx >= 0) {
-                    _todayEntries[todayIdx].quantity_value = nextQuantity;
-                }
+                // Invalidate weekly cache for this entry so it reloads fresh
                 Object.keys(_weeklyDayEntryCache).forEach(dateStr => {
                     const idx = _weeklyDayEntryCache[dateStr].findIndex(e => e.id === entryId);
                     if (idx >= 0) {
-                        _weeklyDayEntryCache[dateStr][idx].quantity_value = nextQuantity;
-                        // Re-render only this day's open panel
-                        const body = document.getElementById(_weeklyDayElementId(dateStr));
-                        if (body && body.classList.contains('open')) {
-                            body.innerHTML = _renderWeeklyDayEntries(_weeklyDayEntryCache[dateStr]);
-                        }
+                        delete _weeklyDayEntryCache[dateStr];
                     }
                 });
 
-                // Re-render daily view in-place if active (no fetch needed)
+                // Reload the active view from the server so displayed values are always accurate
                 if (document.getElementById('daily-tab')?.classList.contains('active')) {
-                    renderTodayEntries();
+                    await loadTodayEntries();
+                } else if (document.getElementById('weekly-tab')?.classList.contains('active')) {
+                    await loadWeekly();
                 }
 
             } catch (error) {
