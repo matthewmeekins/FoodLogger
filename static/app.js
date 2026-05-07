@@ -6,6 +6,8 @@
     const _weeklyDayEntryCache = {};
     const _entryMap = {};
     let _weeklyLoadRequestId = 0;
+    let _dailyDatePickerInstance = null;
+    let _weeklyDatePickerInstance = null;
 
         // Switch between tabs
         function switchTab(tabName, tabButton = null) {
@@ -96,6 +98,9 @@
             if (picker) {
                 picker.value = _selectedDailyDate;
             }
+            if (_dailyDatePickerInstance) {
+                _dailyDatePickerInstance.setDate(_selectedDailyDate, false);
+            }
         }
 
         function navigateDaily(direction) {
@@ -121,6 +126,14 @@
         }
 
         function openDatePicker(inputId) {
+            if (inputId === 'daily-date-picker' && _dailyDatePickerInstance) {
+                _dailyDatePickerInstance.open();
+                return;
+            }
+            if (inputId === 'weekly-date-picker' && _weeklyDatePickerInstance) {
+                _weeklyDatePickerInstance.open();
+                return;
+            }
             const input = document.getElementById(inputId);
             if (!input) {
                 return;
@@ -203,6 +216,37 @@
                     closeAccountMenu();
                 }
             });
+        }
+
+        function setupStyledDatePickers() {
+            if (typeof window.flatpickr !== 'function') {
+                return;
+            }
+
+            const dailyPickerEl = document.getElementById('daily-date-picker');
+            if (dailyPickerEl) {
+                _dailyDatePickerInstance = window.flatpickr(dailyPickerEl, {
+                    dateFormat: 'Y-m-d',
+                    defaultDate: _selectedDailyDate,
+                    disableMobile: true,
+                    onChange: (_dates, dateStr) => {
+                        onDailyDateChange(dateStr);
+                    },
+                });
+            }
+
+            const weeklyPickerEl = document.getElementById('weekly-date-picker');
+            if (weeklyPickerEl) {
+                const initialWeekDate = _weeklyStartDate || _getMondayOf(formatIsoDate(new Date()));
+                _weeklyDatePickerInstance = window.flatpickr(weeklyPickerEl, {
+                    dateFormat: 'Y-m-d',
+                    defaultDate: initialWeekDate,
+                    disableMobile: true,
+                    onChange: (_dates, dateStr) => {
+                        onWeeklyDateChange(dateStr);
+                    },
+                });
+            }
         }
 
         async function requireAuth() {
@@ -870,6 +914,9 @@
                 if (weeklyPicker) {
                     weeklyPicker.value = data.start_date;
                 }
+                if (_weeklyDatePickerInstance) {
+                    _weeklyDatePickerInstance.setDate(data.start_date, false);
+                }
 
                 // Compute max calories for chart scaling
                 const calValues = data.days.map(d => d.total_calories || 0);
@@ -1239,6 +1286,7 @@
                 return;
             }
             setupAccountMenu();
+            setupStyledDatePickers();
             _syncDailyDatePicker();
             loadFavorites();
         }
