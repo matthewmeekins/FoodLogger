@@ -1367,16 +1367,19 @@ let currentEditEntryId = null;
             const carbs = document.getElementById('edit-carbs').value;
             const fat = document.getElementById('edit-fat').value;
 
+            const currentEntry = _entryMap[currentEditEntryId] || null;
+            const effectiveDateForTime = loggedDate || currentEntry?.logged_date || '';
+
             if (foodName) updateData.food_name = foodName;
             if (calories) updateData.calories = parseInt(calories);
             if (quantity) updateData.quantity_value = parseFloat(quantity);
             if (meal) updateData.meal = meal;
             if (loggedDate) updateData.logged_date = loggedDate;
 
-            if (loggedDate && loggedTime) {
-                const createdAtIso = buildUtcIsoFromLocalDateTime(loggedDate, loggedTime);
+            if (loggedTime) {
+                const createdAtIso = buildUtcIsoFromLocalDateTime(effectiveDateForTime, loggedTime);
                 if (!createdAtIso) {
-                    showStatus('Please enter a valid date/time', 'error');
+                    showStatus('Please enter a valid time', 'error');
                     return;
                 }
                 updateData.created_at = createdAtIso;
