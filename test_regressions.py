@@ -113,6 +113,44 @@ class FoodLogRegressionTests(unittest.TestCase):
         self.assertIn("quantity_value", edited_fields)
         self.assertIn("calories", edited_fields)
 
+    def test_entry_update_can_change_date_and_time(self) -> None:
+        original_date = "2026-05-01"
+        updated_date = "2026-05-03"
+        updated_created_at = "2026-05-03T14:45:00+00:00"
+
+        raw_id = database.insert_raw_entry("banana")
+        parsed_id = database.insert_parsed_entry(raw_id, {"intents": []})
+        entry_id = database.insert_resolved_entry(
+            user_id=self.user_id,
+            parsed_id=parsed_id,
+            food_name="BANANA",
+            calories=105,
+            meal="breakfast",
+            logged_date=original_date,
+            source="manual",
+        )
+
+        updated = database.update_resolved_entry(
+            entry_id,
+            self.user_id,
+            logged_date=updated_date,
+            created_at=updated_created_at,
+        )
+        self.assertTrue(updated)
+
+        updated_entries = database.get_entries_for_date(updated_date, self.user_id)
+        updated_entry = next(e for e in updated_entries if e["id"] == entry_id)
+        self.assertEqual(updated_entry["logged_date"], updated_date)
+        self.assertEqual(updated_entry["created_at"], updated_created_at)
+
+        original_entries = database.get_entries_for_date(original_date, self.user_id)
+        self.assertFalse(any(e["id"] == entry_id for e in original_entries))
+
+        edits = database.get_entry_edits(entry_id, self.user_id)
+        fields = {edit["field_name"] for edit in edits}
+        self.assertIn("logged_date", fields)
+        self.assertIn("created_at", fields)
+
     def test_add_to_today_from_summary_entry(self) -> None:
         historical_date = "2026-05-01"
 

@@ -59,6 +59,7 @@ class UpdateEntryRequest(BaseModel):
     quantity_unit: Optional[str] = None
     meal: Optional[str] = None
     logged_date: Optional[str] = None
+    created_at: Optional[str] = None
     protein_g: Optional[float] = None
     carbs_g: Optional[float] = None
     fat_g: Optional[float] = None

@@ -5,7 +5,7 @@ FastAPI application for food logging system.
 import os
 import json
 import time
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, UTC
 from typing import Dict, Any
 from collections import deque
 from fastapi import FastAPI, Request, HTTPException, Body, Response, Depends
@@ -542,6 +542,18 @@ def update_entry(
     Update a food entry with edit history tracking.
     Only provided fields will be updated.
     """
+    normalized_created_at = update_data.created_at
+    if normalized_created_at is not None:
+        candidate = normalized_created_at.strip().replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(candidate)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="created_at must be a valid ISO datetime")
+
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        normalized_created_at = parsed.astimezone(UTC).isoformat()
+
     updated = database.update_resolved_entry(
         entry_id,
         int(current_user["id"]),
@@ -551,6 +563,7 @@ def update_entry(
         quantity_unit=update_data.quantity_unit,
         meal=update_data.meal,
         logged_date=update_data.logged_date,
+        created_at=normalized_created_at,
         protein_g=update_data.protein_g,
         carbs_g=update_data.carbs_g,
         fat_g=update_data.fat_g,

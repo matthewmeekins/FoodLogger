@@ -52,7 +52,7 @@ This file is a fast restart guide for coding agents and future sessions without 
 - test_regressions.py: key behavior protections
 - PROJECT_SUMMARY.md: high-level project status
 - README.md: setup and API usage
-- IMPLEMENTATION_PLAN.md: 6-phase improvement roadmap
+- ignored-docs/IMPLEMENTATION_PLAN.md: 6-phase improvement roadmap
 - AGENTS.md (this file): fast restart guide for AI coding agents
 
 ## Recommended Working Rules
@@ -61,7 +61,7 @@ This file is a fast restart guide for coding agents and future sessions without 
 - Run regression tests after touching parse or estimation code.
 - Preserve existing rollback tags; add new checkpoint tag before major changes.
 - Avoid broad refactors in the same commit as behavior changes.
-- Follow IMPLEMENTATION_PLAN.md phase sequence (currently completed Phase 0 and Phase 1).
+- Follow ignored-docs/IMPLEMENTATION_PLAN.md phase sequence (currently completed Phase 0 and Phase 1).
 
 ## Suggested Prompt To Resume Work
 

@@ -56,6 +56,39 @@
             return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
         }
 
+        function getLocalDateAndTimeFromTimestamp(timestamp) {
+            if (!timestamp) {
+                return null;
+            }
+            const normalized = /Z$|[+-]\d\d:\d\d$/.test(timestamp) ? timestamp : `${timestamp}Z`;
+            const date = new Date(normalized);
+            if (Number.isNaN(date.getTime())) {
+                return null;
+            }
+
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+
+            return {
+                date: `${year}-${month}-${day}`,
+                time: `${hours}:${minutes}`,
+            };
+        }
+
+        function buildUtcIsoFromLocalDateTime(dateStr, timeStr) {
+            if (!dateStr || !timeStr) {
+                return null;
+            }
+            const localDate = new Date(`${dateStr}T${timeStr}:00`);
+            if (Number.isNaN(localDate.getTime())) {
+                return null;
+            }
+            return localDate.toISOString();
+        }
+
         function formatNutrient(value) {
             const num = Number(value);
             if (!Number.isFinite(num)) {
@@ -1302,10 +1335,13 @@ let currentEditEntryId = null;
                 return;
             }
             currentEditEntryId = entry.id;
+            const dateTimeParts = getLocalDateAndTimeFromTimestamp(entry.created_at);
             document.getElementById('edit-food-name').value = entry.food_name || '';
             document.getElementById('edit-calories').value = entry.calories || '';
             document.getElementById('edit-quantity').value = entry.quantity_value || 1;
             document.getElementById('edit-meal').value = entry.meal || '';
+            document.getElementById('edit-logged-date').value = entry.logged_date || dateTimeParts?.date || '';
+            document.getElementById('edit-logged-time').value = dateTimeParts?.time || '';
             document.getElementById('edit-protein').value = entry.protein_g || '';
             document.getElementById('edit-carbs').value = entry.carbs_g || '';
             document.getElementById('edit-fat').value = entry.fat_g || '';
@@ -1325,6 +1361,8 @@ let currentEditEntryId = null;
             const calories = document.getElementById('edit-calories').value;
             const quantity = document.getElementById('edit-quantity').value;
             const meal = document.getElementById('edit-meal').value.trim();
+            const loggedDate = document.getElementById('edit-logged-date').value;
+            const loggedTime = document.getElementById('edit-logged-time').value;
             const protein = document.getElementById('edit-protein').value;
             const carbs = document.getElementById('edit-carbs').value;
             const fat = document.getElementById('edit-fat').value;
@@ -1333,6 +1371,17 @@ let currentEditEntryId = null;
             if (calories) updateData.calories = parseInt(calories);
             if (quantity) updateData.quantity_value = parseFloat(quantity);
             if (meal) updateData.meal = meal;
+            if (loggedDate) updateData.logged_date = loggedDate;
+
+            if (loggedDate && loggedTime) {
+                const createdAtIso = buildUtcIsoFromLocalDateTime(loggedDate, loggedTime);
+                if (!createdAtIso) {
+                    showStatus('Please enter a valid date/time', 'error');
+                    return;
+                }
+                updateData.created_at = createdAtIso;
+            }
+
             if (protein) updateData.protein_g = parseFloat(protein);
             if (carbs) updateData.carbs_g = parseFloat(carbs);
             if (fat) updateData.fat_g = parseFloat(fat);

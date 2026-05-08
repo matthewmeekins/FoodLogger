@@ -447,6 +447,7 @@ def update_resolved_entry(
     quantity_unit: Optional[str] = None,
     meal: Optional[str] = None,
     logged_date: Optional[str] = None,
+    created_at: Optional[str] = None,
     protein_g: Optional[float] = None,
     carbs_g: Optional[float] = None,
     fat_g: Optional[float] = None,
@@ -461,7 +462,7 @@ def update_resolved_entry(
     
     # Get current values for audit trail
     cursor.execute(
-        """SELECT food_name, calories, quantity_value, quantity_unit, meal, logged_date,
+        """SELECT food_name, calories, quantity_value, quantity_unit, meal, logged_date, created_at,
                         protein_g, carbs_g, fat_g, reasoning,
                   per_unit_calories, per_unit_protein_g, per_unit_carbs_g, per_unit_fat_g
               FROM resolved_entries WHERE id = ? AND user_id = ?""",
@@ -581,6 +582,11 @@ def update_resolved_entry(
         updates.append("logged_date = ?")
         values.append(logged_date)
         _log_edit(cursor, entry_id, "logged_date", current["logged_date"], logged_date, user_id)
+
+    if created_at is not None and created_at != current["created_at"]:
+        updates.append("created_at = ?")
+        values.append(created_at)
+        _log_edit(cursor, entry_id, "created_at", current["created_at"], created_at, user_id)
     
     if protein_g is not None and protein_g != current["protein_g"]:
         updates.append("protein_g = ?")
