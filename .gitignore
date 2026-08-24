@@ -3,6 +3,9 @@
 
 # Database
 food_log.db
+food_log.db-shm
+food_log.db-wal
+food_log.db.backup-*
 
 # Python
 __pycache__/
@@ -28,3 +31,6 @@ Thumbs.db
 
 # Local-only docs (keep for reference, don't publish)
 ignored-docs/
+
+# Claude Code local settings (personal permission overrides)
+.claude/settings.local.json
