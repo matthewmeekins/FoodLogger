@@ -31,6 +31,7 @@ Thumbs.db
 
 # Local-only docs (keep for reference, don't publish)
 ignored-docs/
+ToDo.md
 
 # Claude Code local settings (personal permission overrides)
 .claude/settings.local.json
