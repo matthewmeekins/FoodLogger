@@ -360,6 +360,56 @@
             background: #1b253a;
         }
 
+        .revoke-btn {
+            border: 1px solid #4a2a33;
+            background: #1e131a;
+            color: #ff9ba7;
+            border-radius: 8px;
+            padding: 7px 12px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: border-color 0.16s, color 0.16s, background 0.16s;
+        }
+
+        .revoke-btn:hover {
+            border-color: #ef5b71;
+            color: #ffbec8;
+            background: #2a1720;
+        }
+
+        .revoke-btn:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        .key-reveal {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 14px;
+            padding: 14px;
+            border: 1px solid #33405d;
+            border-radius: 10px;
+            background: linear-gradient(180deg, #131a2b 0%, #101622 100%);
+        }
+
+        .key-reveal-value {
+            flex: 1 1 260px;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 0.86rem;
+            color: #b8f0c9;
+            word-break: break-all;
+        }
+
+        .key-reveal-warning {
+            width: 100%;
+            font-size: 0.78rem;
+            color: #f5c26b;
+        }
+
         .header h1 {
             font-size: 2rem;
             line-height: 1.1;

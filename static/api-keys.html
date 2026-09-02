@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Food Log API Keys</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container admin-page-wrap">
+        <div class="header">
+            <div class="header-top-row">
+                <div>
+                    <h1>API Keys</h1>
+                    <p>Personal keys for non-browser clients, like a Siri Shortcut.</p>
+                </div>
+                <div class="auth-controls">
+                    <span id="api-keys-current-user" class="current-user"></span>
+                    <a class="logout-btn" href="/">Back to App</a>
+                    <button class="logout-btn" onclick="logout()">Log out</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 class="section-title">Create a New Key</h2>
+            <div class="admin-form-grid">
+                <div class="admin-field">
+                    <label for="new-key-label">Label</label>
+                    <input id="new-key-label" class="admin-input" type="text" placeholder="e.g., Siri Shortcut">
+                </div>
+            </div>
+            <button class="button" onclick="generateKey()">Generate Key</button>
+            <div id="create-key-status" class="status-message"></div>
+            <div id="key-reveal" class="key-reveal" style="display: none;">
+                <span class="key-reveal-value" id="key-reveal-value"></span>
+                <button class="button secondary-btn" onclick="copyKey()">Copy</button>
+                <span class="key-reveal-warning">Copy this now — it won't be shown again. Paste it into your Shortcut's header as <code>Authorization: Bearer &lt;key&gt;</code>.</span>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 class="section-title">Your Keys</h2>
+            <div id="keys-status" class="status-message"></div>
+            <div class="admin-table-wrap">
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th>Label</th>
+                            <th>Key</th>
+                            <th>Created</th>
+                            <th>Last Used</th>
+                            <th>Status</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="keys-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/api-keys.js"></script>
+</body>
+</html>

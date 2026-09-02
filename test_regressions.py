@@ -408,6 +408,44 @@ class FoodLogRegressionTests(unittest.TestCase):
         self.assertEqual(fav["item_count"], 2)
         self.assertAlmostEqual(fav["total_protein_g"], 41.0)
 
+    def test_api_key_authenticates_requests_without_cookie(self) -> None:
+        """A generated API key authenticates via Authorization: Bearer, no session cookie needed."""
+        authed = self._authed_client()
+        create_resp = authed.post("/auth/api-keys", json={"label": "Test Key"})
+        self.assertEqual(create_resp.status_code, 200)
+        raw_key = create_resp.json()["key"]
+
+        anon_client = TestClient(main.app)
+        resp = anon_client.get("/log/today", headers={"Authorization": f"Bearer {raw_key}"})
+        self.assertEqual(resp.status_code, 200)
+
+    def test_revoked_api_key_is_rejected(self) -> None:
+        """Revoking a key immediately invalidates it for future requests."""
+        authed = self._authed_client()
+        create_resp = authed.post("/auth/api-keys", json={"label": "Temp Key"})
+        key_id = create_resp.json()["id"]
+        raw_key = create_resp.json()["key"]
+
+        revoke_resp = authed.delete(f"/auth/api-keys/{key_id}")
+        self.assertEqual(revoke_resp.status_code, 200)
+
+        anon_client = TestClient(main.app)
+        resp = anon_client.get("/log/today", headers={"Authorization": f"Bearer {raw_key}"})
+        self.assertEqual(resp.status_code, 401)
+
+    def test_api_keys_list_excludes_raw_key_and_hash(self) -> None:
+        """Listing API keys never exposes the raw key or its hash."""
+        authed = self._authed_client()
+        authed.post("/auth/api-keys", json={"label": "List Test"})
+
+        list_resp = authed.get("/auth/api-keys")
+        self.assertEqual(list_resp.status_code, 200)
+        keys = list_resp.json()["api_keys"]
+        self.assertEqual(len(keys), 1)
+        self.assertNotIn("key_hash", keys[0])
+        self.assertNotIn("key", keys[0])
+        self.assertTrue(keys[0]["key_prefix"])
+
 
 if __name__ == "__main__":
     unittest.main()

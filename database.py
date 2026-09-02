@@ -160,6 +160,10 @@ def _ensure_indexes(cursor: sqlite3.Cursor) -> None:
         """CREATE INDEX IF NOT EXISTS idx_resolved_entries_logged_date_id
            ON resolved_entries(logged_date, id DESC)"""
     )
+    cursor.execute(
+        """CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash
+           ON api_keys(key_hash)"""
+    )
 
 
 def init_db() -> None:
@@ -261,6 +265,20 @@ def init_db() -> None:
             expires_at  TEXT NOT NULL,
             user_agent  TEXT,
             ip_address  TEXT
+        )
+    """)
+
+    # api_keys: long-lived per-user credentials for non-browser clients (e.g. Siri Shortcuts)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS api_keys (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            label         TEXT,
+            key_hash      TEXT NOT NULL UNIQUE,
+            key_prefix    TEXT NOT NULL,
+            created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+            last_used_at  TEXT,
+            revoked_at    TEXT
         )
     """)
 
@@ -1306,3 +1324,79 @@ def delete_expired_sessions() -> int:
     conn.commit()
     conn.close()
     return deleted
+
+
+# ---------------------------------------------------------------------------
+# API key helpers
+# ---------------------------------------------------------------------------
+
+def create_api_key(user_id: int, label: Optional[str], key_hash: str, key_prefix: str) -> int:
+    """Insert a new API key record. Returns the new key's id.
+
+    Only the hash is stored; the raw key is never persisted.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """INSERT INTO api_keys (user_id, label, key_hash, key_prefix)
+           VALUES (?, ?, ?, ?)""",
+        (user_id, label, key_hash, key_prefix),
+    )
+    key_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return key_id
+
+
+def list_api_keys(user_id: int) -> List[Dict[str, Any]]:
+    """Return metadata for all API keys belonging to a user (never the hash)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """SELECT id, label, key_prefix, created_at, last_used_at, revoked_at
+           FROM api_keys WHERE user_id = ? ORDER BY created_at DESC""",
+        (user_id,),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_active_api_key_by_hash(key_hash: str) -> Optional[Dict[str, Any]]:
+    """Return the active (non-revoked) API key row matching this hash, or None."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL",
+        (key_hash,),
+    )
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def touch_api_key_last_used(key_id: int) -> None:
+    """Best-effort update of last_used_at, called on each authenticated use."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE api_keys SET last_used_at = datetime('now') WHERE id = ?",
+        (key_id,),
+    )
+    conn.commit()
+    conn.close()
+
+
+def revoke_api_key(user_id: int, key_id: int) -> bool:
+    """Revoke a key owned by user_id. Returns True if a row was updated."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """UPDATE api_keys SET revoked_at = datetime('now')
+           WHERE id = ? AND user_id = ? AND revoked_at IS NULL""",
+        (key_id, user_id),
+    )
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated

@@ -114,3 +114,8 @@ class ChangePasswordRequest(BaseModel):
     """Request payload for authenticated self-service password changes."""
     current_password: str
     new_password: str
+
+
+class CreateApiKeyRequest(BaseModel):
+    """Request payload for creating a personal API key."""
+    label: Optional[str] = None

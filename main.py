@@ -5,6 +5,8 @@ FastAPI application for food logging system.
 import os
 import json
 import time
+import hashlib
+import secrets
 from datetime import date, timedelta, datetime, UTC
 from typing import Dict, Any
 from collections import deque
@@ -25,6 +27,7 @@ from models import (
     RegisterUserRequest,
     UpdateUserRequest,
     ChangePasswordRequest,
+    CreateApiKeyRequest,
 )
 
 
@@ -34,6 +37,7 @@ load_dotenv()
 RATE_LIMIT_PER_MINUTE = max(1, int(os.getenv("RATE_LIMIT_PER_MINUTE", "40")))
 AUTH_COOKIE_NAME = "session_id"
 AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true"
+API_KEY_PREFIX = "flk_"
 
 _RATE_WINDOW_SECONDS = 60
 _REQUEST_HISTORY: dict[str, deque[float]] = {}
@@ -70,6 +74,16 @@ def _get_client_ip(request: Request) -> str:
     return "unknown"
 
 
+def _hash_api_key(raw_key: str) -> str:
+    """Deterministic hash for API key lookup (keys are high-entropy random tokens,
+    so a fast, unsalted hash is appropriate here — unlike passwords)."""
+    return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
+
+def _generate_api_key() -> str:
+    return API_KEY_PREFIX + secrets.token_urlsafe(32)
+
+
 def _public_user(user: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "id": user["id"],
@@ -99,20 +113,33 @@ def _clear_session_cookie(response: Response) -> None:
 
 def get_current_user(request: Request) -> Dict[str, Any]:
     session_id = request.cookies.get(AUTH_COOKIE_NAME)
-    if not session_id:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+    if session_id:
+        session = database.get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=401, detail="Invalid or expired session")
 
-    session = database.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=401, detail="Invalid or expired session")
+        user = database.get_user_by_id(int(session["user_id"]))
+        if not user or not bool(user.get("is_active")):
+            database.delete_session(session_id)
+            raise HTTPException(status_code=401, detail="User account inactive")
 
-    user = database.get_user_by_id(int(session["user_id"]))
-    if not user or not bool(user.get("is_active")):
-        database.delete_session(session_id)
-        raise HTTPException(status_code=401, detail="User account inactive")
+        database.refresh_session(session_id)
+        return user
 
-    database.refresh_session(session_id)
-    return user
+    # Fall back to a personal API key (for non-browser clients like Siri Shortcuts)
+    # via `Authorization: Bearer <key>`.
+    auth_header = request.headers.get("authorization")
+    if auth_header and auth_header.lower().startswith("bearer "):
+        raw_key = auth_header[len("bearer "):].strip()
+        if raw_key:
+            key_record = database.get_active_api_key_by_hash(_hash_api_key(raw_key))
+            if key_record:
+                user = database.get_user_by_id(int(key_record["user_id"]))
+                if user and bool(user.get("is_active")):
+                    database.touch_api_key_last_used(int(key_record["id"]))
+                    return user
+
+    raise HTTPException(status_code=401, detail="Not authenticated")
 
 
 def require_admin(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
@@ -217,6 +244,54 @@ def change_password(
         raise HTTPException(status_code=500, detail="Password update failed")
 
     return {"status": "success", "message": "Password updated"}
+
+
+@app.post("/auth/api-keys")
+def create_api_key(
+    body: CreateApiKeyRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Create a new personal API key for use in non-browser clients (e.g. Siri
+    Shortcuts). The raw key is returned once here and is never stored or
+    shown again — only its hash is persisted."""
+    raw_key = _generate_api_key()
+    key_hash = _hash_api_key(raw_key)
+    key_prefix = raw_key[: len(API_KEY_PREFIX) + 8]
+    label = (body.label or "").strip() or None
+
+    key_id = database.create_api_key(
+        user_id=int(current_user["id"]),
+        label=label,
+        key_hash=key_hash,
+        key_prefix=key_prefix,
+    )
+
+    return {
+        "status": "success",
+        "message": "API key created. Copy it now — it will not be shown again.",
+        "id": key_id,
+        "label": label,
+        "key_prefix": key_prefix,
+        "key": raw_key,
+    }
+
+
+@app.get("/auth/api-keys")
+def get_api_keys(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    """List the current user's API keys (metadata only, never the key itself)."""
+    return {"api_keys": database.list_api_keys(int(current_user["id"]))}
+
+
+@app.delete("/auth/api-keys/{key_id}")
+def delete_api_key(
+    key_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Revoke an API key owned by the current user."""
+    revoked = database.revoke_api_key(int(current_user["id"]), key_id)
+    if not revoked:
+        raise HTTPException(status_code=404, detail="API key not found")
+    return {"status": "success", "message": "API key revoked"}
 
 
 @app.post("/auth/register")
@@ -781,6 +856,12 @@ def login_page():
 def admin_page():
     """Serve admin UI."""
     return FileResponse("static/admin.html")
+
+
+@app.get("/api-keys")
+def api_keys_page():
+    """Serve personal API key management UI."""
+    return FileResponse("static/api-keys.html")
 
 
 @app.get("/health")
